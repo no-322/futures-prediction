@@ -49,7 +49,7 @@ For each target minute `t`, build a 20-dim vector from minutes `t-4, t-3, t-2, t
 Order: `[m-4 features, m-3 features, m-2 features, m-1 features]`.
 
 ## Label specification
-`label(t) = 1 if close(t+1) > Open(t+1) else 0`.
+`label(t) = 1 if close(t) > Open(t) else 0`.
 
 ## Models
 Three classifiers on the same features and labels:
