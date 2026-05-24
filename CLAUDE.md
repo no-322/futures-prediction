@@ -29,6 +29,47 @@ Predict whether a futures contract's price goes up or down in the next minute, u
 └── pyproject.toml
 ```
 
+## Data
+
+**File:** `data/raw/data.csv` — read-only, never modified.
+
+**Shape:** 551,521 rows × 14 columns.
+
+**Schema:**
+
+| Column        | dtype        | Notes                                           |
+|---------------|--------------|-------------------------------------------------|
+| Date          | str          | M/D/YYYY — redundant with "Date and Time"       |
+| Time          | str          | H:MM:SS — redundant with "Date and Time"        |
+| Date and Time | str→datetime | Parse as the primary timestamp index            |
+| Symbol        | str          | 13 TY (10-Year Treasury Note) futures contracts |
+| Open          | float64      | Minute-bar open price                           |
+| High          | float64      | Minute-bar high price                           |
+| Low           | float64      | Minute-bar low price                            |
+| Close         | float64      | Minute-bar close price                          |
+| VWAP          | float64      | Volume-weighted average price for the bar       |
+| Volume        | int64        | Share/contract volume; min=1, no zero rows      |
+| Up Ticks      | int64        |                                                 |
+| Down Ticks    | int64        |                                                 |
+| Same Ticks    | int64        |                                                 |
+| Tick Count    | int64        |                                                 |
+
+**Time range:** 2023-01-03 04:01 → 2026-01-09 16:00 (~3 years of minute bars).
+
+**Sort order:** Monotonically increasing by "Date and Time" — no backward jumps, no duplicate timestamps. Rows are already sorted; do not re-sort.
+
+**Symbols:** 13 TY futures contracts (delivery months H/M/U/Z, years 2023–2026). Each symbol covers roughly one quarterly contract period (~44,000–46,500 rows each); TYH23 and TYH26 are shorter (contract boundaries).
+
+**Data quality:**
+- No NaN values in any column.
+- No zero-volume rows.
+- ~0.76% of rows (4,201) have a gap > 1 minute to the next row:
+  - 2-minute gaps: 3,086 — normal tick consolidation or thin-market minutes.
+  - Overnight/session-boundary gaps (≥12 h): 598 — Treasury futures close and reopen.
+  - 3-minute gaps: 277.
+  - Multi-day gaps: 145 — weekends and holidays.
+- Features must handle these gaps correctly: **do not assume consecutive rows are consecutive minutes**. Use timestamp arithmetic, not row offsets, when computing lags.
+
 ## Non-negotiable rules
 
 1. **Random seed is `42`** everywhere randomness appears.

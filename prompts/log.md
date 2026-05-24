@@ -30,3 +30,13 @@ stage and commit with appropriate changes
 ## 2026-05-24 16:24:26
 
 stage and commit with appropriate changes
+
+---
+## 2026-05-24 16:38:26
+
+Read data/raw/data.csv. Don't write production code yet — just inspect the data. Then propose an update to the "Data" section of CLAUDE.md (add the section if it doesn't exist yet) covering: file location, schema (columns with dtypes), row count, time range, sort order, and any quirks (NaNs, zero-volume rows, gaps, duplicates). Show me the proposed change before applying.
+
+---
+## 2026-05-24 16:52:45
+
+stage and commit appropriate message. Add docs/notebook.md as well. It contains my learnings based on the prompts. It is like a lab note
