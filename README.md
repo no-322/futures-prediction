@@ -56,6 +56,7 @@ python -m src.evaluate    # full comparison
 ```
 
 ## Repo structure
+```
 .
 ├── CLAUDE.md
 ├── .claude/
@@ -78,7 +79,7 @@ python -m src.evaluate    # full comparison
 │   ├── MODULES.md           
 │   └── notes/               
 └── pyproject.toml
-
+```
 
 ## Theoretical grounding
 Notes on each algorithm from Elements of Statistical Learning:

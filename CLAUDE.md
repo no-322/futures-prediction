@@ -4,6 +4,7 @@
 Predict whether a futures contract's price goes up or down in the next minute, using lagged minute-bar features. Train and compare three classifiers (SVM, Gradient Boosting, Random Forest) against simple baselines.
 
 ## Directory layout
+```
 .
 ├── CLAUDE.md
 ├── .claude/
@@ -26,6 +27,7 @@ Predict whether a futures contract's price goes up or down in the next minute, u
 │   ├── MODULES.md           # function table for the professor
 │   └── notes/               # ESL reading notes
 └── pyproject.toml
+```
 
 ## Non-negotiable rules
 
