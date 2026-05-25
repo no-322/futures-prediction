@@ -40,3 +40,14 @@ Read data/raw/data.csv. Don't write production code yet — just inspect the dat
 ## 2026-05-24 16:52:45
 
 stage and commit appropriate message. Add docs/notebook.md as well. It contains my learnings based on the prompts. It is like a lab note
+
+---
+## 2026-05-25 12:12:17
+
+I need to load the data next. The data is present in data/raw/*.csv. Write tests to validate schema ensuring the columns needed to construct the feature vector is present
+
+
+---
+## 2026-05-25 12:44:43
+
+stage and commit with appropriate message

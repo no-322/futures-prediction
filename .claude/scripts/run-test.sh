@@ -12,7 +12,8 @@ if [[ "$FILE" == *"/src/"*".py" ]]; then
 
   if [ -f "$TEST_FILE" ]; then
     cd "$CLAUDE_PROJECT_DIR"
-    if ! pytest "$TEST_FILE" -q; then
+    PYTEST="${CLAUDE_PROJECT_DIR}/../../Python/envs/futures-pred/bin/pytest"
+    if ! "$PYTEST" "$TEST_FILE" -q; then
       echo "Tests failed in $TEST_FILE — fix before continuing." >&2
       exit 2
     fi
