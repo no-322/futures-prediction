@@ -51,3 +51,13 @@ I need to load the data next. The data is present in data/raw/*.csv. Write tests
 ## 2026-05-25 12:44:43
 
 stage and commit with appropriate message
+
+---
+## 2026-05-25 13:18:14
+
+I need to write src/split.py next. This function splits the data loaded in by src/load.py into train and test sets. the first 50% of data based on timestamp would be the train set and the next 50% would be test set. Ensure that the split is reproducible and that train and test datasets are non-overlapping
+
+---
+## 2026-05-25 13:25:01
+
+stage and commit with appropriate message
