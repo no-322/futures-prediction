@@ -86,3 +86,13 @@ Next we write src/features.py. This reads the training data provided by split.py
 ## 2026-05-26 22:49:43
 
 stage and commit all changes with relevant comments
+
+---
+## 2026-05-26 23:06:33
+
+Features.py documentation was not added to MODULES.md. Next create labels.py. This handles the labels for the training data. If Close> Open for that row, then 1 else 0. The features.py output with the 20 features and the label created in labels.py becomes the training dataset. Read instructions from CLAUDE.md and .claude/skills/feature-engineering/SKILL.md and add the function description and signature in MODULES.md
+
+---
+## 2026-05-26 23:12:24
+
+stage and commit all changes with relevant comments
