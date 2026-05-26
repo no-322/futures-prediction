@@ -61,3 +61,18 @@ I need to write src/split.py next. This function splits the data loaded in by sr
 ## 2026-05-25 13:25:01
 
 stage and commit with appropriate message
+
+---
+## 2026-05-25 13:36:12
+
+We need to modify load.py so that print warning is not the only action taken when date time is not monotonically increasing. We should sort rows if it is not, so that load.py does not provide garbage results.
+
+---
+## 2026-05-26 20:16:17
+
+stage and commit with relevant comments. Updated notebook.md to reflect learning on Monday 25th May. Added file evaluation.md- it contains notes of ESL topics 7.1-7.4
+
+---
+## 2026-05-26 20:16:46
+
+stage and commit with relevant comments. Updated notebook.md to reflect learning on Monday 25th May. Added file evaluation.md- it contains notes of ESL topics 7.1-7.4

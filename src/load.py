@@ -20,11 +20,14 @@ def load_raw(path: Path | str) -> pd.DataFrame:
         path: Path to the raw CSV file (data/raw/data.csv).
 
     Returns:
-        DataFrame with "Date and Time" as datetime64, all other columns
-        unchanged. Rows are not dropped or reordered.
+        DataFrame with "Date and Time" as datetime64, sorted by timestamp.
+        Rows are sorted by "Date and Time" if not already in order.
     """
     df = pd.read_csv(path)
     df["Date and Time"] = pd.to_datetime(df["Date and Time"])
+    if not df["Date and Time"].is_monotonic_increasing:
+        print("WARNING: rows not in timestamp order — sorting by 'Date and Time'.")
+        df = df.sort_values("Date and Time").reset_index(drop=True)
     print(f"Loaded {len(df):,} rows from {path}")
     return df
 
