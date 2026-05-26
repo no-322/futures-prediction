@@ -76,3 +76,13 @@ stage and commit with relevant comments. Updated notebook.md to reflect learning
 ## 2026-05-26 20:16:46
 
 stage and commit with relevant comments. Updated notebook.md to reflect learning on Monday 25th May. Added file evaluation.md- it contains notes of ESL topics 7.1-7.4
+
+---
+## 2026-05-26 20:53:17
+
+Next we write src/features.py. This reads the training data provided by split.py and creates the 20 dimensional feature vector. If any of t-1, t-2, t-3 or t-4 data is empty, fill in value from previously available row from the same column. Drop first 4 rows to remove null values. Write test cases to match row-count post-transformation+4 = train data count  and test cases to match dimension of columns as well and ensure there are no null values
+
+---
+## 2026-05-26 22:49:43
+
+stage and commit all changes with relevant comments
