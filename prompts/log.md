@@ -106,3 +106,23 @@ Lets change the pipeline. The order of execution should be load.py -> features.p
 ## 2026-05-27 13:20:31
 
 stage and commit with appropriate comments. I have made changes to notebook.md as well
+
+---
+## 2026-05-27 13:27:10
+
+Next write src/models/baseline.py. It has 4 functions. the train function uses logistic regression to train on the feature vectors and label dataset. Ensure reproducibility by fixing seed to 42. The predict function predicts the label for test feature vectors. This is going to be one of the baselines. third function will predict always up and fourth function would just predict the last direction
+
+---
+## 2026-05-27 13:27:23
+
+Next write src/models/baseline.py. It has 4 functions. the train function uses logistic regression to train on the feature vectors and label dataset. Ensure reproducibility by fixing seed to 42. The predict function predicts the label for test feature vectors. This is going to be one of the baselines. third function will predict always up and fourth function would just predict the last direction
+
+---
+## 2026-05-27 13:40:24
+
+stage and commit changes
+
+---
+## 2026-05-27 13:40:29
+
+stage and commit changes

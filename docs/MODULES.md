@@ -26,3 +26,12 @@ One entry per function per the project convention: one pseudo-code line = one fu
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `build_labels` | `(df: pd.DataFrame) -> pd.Series` | Compute binary label per row: 1 if `Close > Open`, else 0. No rows dropped — caller passes the aligned training slice (`df.iloc[4:]` of the raw data). Returns `int` Series with reset index. |
+
+## src.models.baseline
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `train` | `(X: pd.DataFrame, y: pd.Series) -> LogisticRegression` | Fit logistic regression on training features and labels; `random_state=42`, `max_iter=1000`. |
+| `predict` | `(model: LogisticRegression, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted logistic regression. |
+| `predict_always_up` | `(n: int) -> np.ndarray` | Baseline: return an array of `n` ones (always predict up). |
+| `predict_last_direction` | `(y_train: pd.Series, y_test: pd.Series) -> np.ndarray` | Baseline: for each test row, predict the direction of the previous bar; first row uses last training label. |
