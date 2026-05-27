@@ -42,3 +42,13 @@ One entry per function per the project convention: one pseudo-code line = one fu
 |----------|-----------|-------------|
 | `train` | `(X: pd.DataFrame, y: pd.Series) -> RandomForestClassifier` | Fit Random Forest (500 trees, `sqrt` features, `min_samples_leaf=5`, `class_weight="balanced"`, `oob_score=True`, `random_state=42`). OOB accuracy available as `model.oob_score_`. |
 | `predict` | `(model: RandomForestClassifier, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted Random Forest. |
+
+## src.evaluate
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `accuracy` | `(y_true: np.ndarray, y_pred: np.ndarray) -> float` | Fraction of correct predictions on the test set. |
+| `recall` | `(y_true: np.ndarray, y_pred: np.ndarray) -> float` | Recall for class 1 (up direction); `zero_division=0`. |
+| `confusion` | `(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray` | 2×2 confusion matrix `[[TN, FP], [FN, TP]]`. |
+| `report` | `(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> str` | Format accuracy, recall, and confusion matrix for one model as a markdown section. |
+| `write_results` | `(reports: list[str], path: Path) -> None` | Write list of markdown report sections to `docs/results.md` (or any path). Creates parent dirs. |
