@@ -126,3 +126,23 @@ stage and commit changes
 ## 2026-05-27 13:40:29
 
 stage and commit changes
+
+---
+## 2026-05-27 18:19:33
+
+Next write src/models/rf.py with the following parameters: RandomForestClassifier(
+    n_estimators=500,
+    max_depth=None,
+    min_samples_leaf=5,
+    max_features='sqrt',
+    oob_score=True,
+    bootstrap=True,
+    random_state=42,
+    class_weight='balanced',  # if your up/down split isn't ~50/50
+    n_jobs=-1,
+). The file will have two functions- 1. train - to train on the training data using the mentioned parameters 2. predict - to predict lable for test data
+
+---
+## 2026-05-27 18:42:15
+
+stage and commit with appropriate comments

@@ -35,3 +35,10 @@ One entry per function per the project convention: one pseudo-code line = one fu
 | `predict` | `(model: LogisticRegression, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted logistic regression. |
 | `predict_always_up` | `(n: int) -> np.ndarray` | Baseline: return an array of `n` ones (always predict up). |
 | `predict_last_direction` | `(y_train: pd.Series, y_test: pd.Series) -> np.ndarray` | Baseline: for each test row, predict the direction of the previous bar; first row uses last training label. |
+
+## src.models.rf
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `train` | `(X: pd.DataFrame, y: pd.Series) -> RandomForestClassifier` | Fit Random Forest (500 trees, `sqrt` features, `min_samples_leaf=5`, `class_weight="balanced"`, `oob_score=True`, `random_state=42`). OOB accuracy available as `model.oob_score_`. |
+| `predict` | `(model: RandomForestClassifier, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted Random Forest. |
