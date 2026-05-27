@@ -15,7 +15,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     The first four rows are dropped because they have no full lag history.
 
     Args:
-        df: DataFrame as returned by split(), with a monotonically increasing
+        df: DataFrame as returned by load_raw(), with a monotonically increasing
             "Date and Time" column and columns Open, Close, High, Low, VWAP.
 
     Returns:
@@ -58,7 +58,8 @@ if __name__ == "__main__":
     from src.split import split
 
     df = load_raw(Path("data/raw/data.csv"))
-    train, _ = split(df)
-    features = build_features(train)
+    features = build_features(df)
     print(f"Feature matrix: {features.shape}")
+    X_train, X_test = split(features)
+    print(f"X_train: {X_train.shape} | X_test: {X_test.shape}")
     print(features.head())

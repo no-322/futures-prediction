@@ -96,3 +96,13 @@ Features.py documentation was not added to MODULES.md. Next create labels.py. Th
 ## 2026-05-26 23:12:24
 
 stage and commit all changes with relevant comments
+
+---
+## 2026-05-27 13:00:29
+
+Lets change the pipeline. The order of execution should be load.py -> features.py -> split.py and pass the training dataset to labels.py. This ensures we don't have to rerun any module to extract features for test data when passing it through machine learning predict methods
+
+---
+## 2026-05-27 13:20:31
+
+stage and commit with appropriate comments. I have made changes to notebook.md as well

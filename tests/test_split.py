@@ -52,3 +52,13 @@ def test_reproducible(dataframes: tuple) -> None:
     train2, test2 = split(df)
     assert train1.equals(train2)
     assert test1.equals(test2)
+
+
+def test_split_feature_matrix() -> None:
+    from src.features import build_features
+    df = load_raw(DATA_PATH)
+    features = build_features(df)
+    f_train, f_test = split(features)
+    assert len(f_train) + len(f_test) == len(features)
+    assert list(f_train.index) == list(range(len(f_train)))
+    assert list(f_test.index) == list(range(len(f_test)))
