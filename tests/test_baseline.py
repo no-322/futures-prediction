@@ -8,9 +8,11 @@ from src.features import build_features
 from src.labels import build_labels
 from src.load import load_raw
 from src.models.baseline import (
+    load,
     predict,
     predict_always_up,
     predict_last_direction,
+    save,
     train,
 )
 from src.split import split
@@ -73,3 +75,11 @@ def test_predict_last_direction_follows_previous(baseline_results: tuple) -> Non
     preds = predict_last_direction(y_train, y_test)
     for i in range(1, 11):
         assert preds[i] == int(y_test.iloc[i - 1]), f"Mismatch at index {i}"
+
+
+def test_save_load_roundtrip(baseline_results: tuple, tmp_path) -> None:
+    _, X_test, _, _, model = baseline_results
+    path = tmp_path / "baseline_model.joblib"
+    save(model, path)
+    loaded = load(path)
+    np.testing.assert_array_equal(predict(model, X_test.iloc[:20]), predict(loaded, X_test.iloc[:20]))

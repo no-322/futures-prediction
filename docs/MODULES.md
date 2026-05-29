@@ -35,6 +35,8 @@ One entry per function per the project convention: one pseudo-code line = one fu
 | `predict` | `(model: LogisticRegression, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted logistic regression. |
 | `predict_always_up` | `(n: int) -> np.ndarray` | Baseline: return an array of `n` ones (always predict up). |
 | `predict_last_direction` | `(y_train: pd.Series, y_test: pd.Series) -> np.ndarray` | Baseline: for each test row, predict the direction of the previous bar; first row uses last training label. |
+| `save` | `(model: LogisticRegression, path: Path = "data/processed/baseline_model.joblib") -> None` | Serialize fitted model to disk with joblib; creates parent dirs. |
+| `load` | `(path: Path = "data/processed/baseline_model.joblib") -> LogisticRegression` | Deserialize and return a LogisticRegression saved by `save()`. |
 
 ## src.models.rf
 
@@ -42,6 +44,26 @@ One entry per function per the project convention: one pseudo-code line = one fu
 |----------|-----------|-------------|
 | `train` | `(X: pd.DataFrame, y: pd.Series) -> RandomForestClassifier` | Fit Random Forest (500 trees, `sqrt` features, `min_samples_leaf=5`, `class_weight="balanced"`, `oob_score=True`, `random_state=42`). OOB accuracy available as `model.oob_score_`. |
 | `predict` | `(model: RandomForestClassifier, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted Random Forest. |
+| `save` | `(model: RandomForestClassifier, path: Path = "data/processed/rf_model.joblib") -> None` | Serialize fitted model to disk with joblib; `oob_score_` is preserved. Creates parent dirs. |
+| `load` | `(path: Path = "data/processed/rf_model.joblib") -> RandomForestClassifier` | Deserialize and return a RandomForestClassifier saved by `save()`, with `oob_score_` intact. |
+
+## src.models.gbm
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `train` | `(X: pd.DataFrame, y: pd.Series) -> XGBClassifier` | Fit `XGBClassifier(n_estimators=500, learning_rate=0.05, max_depth=4, subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0, objective='binary:logistic', random_state=42)`. No scaler needed — GBM is scale-invariant. |
+| `predict` | `(model: XGBClassifier, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted XGBClassifier. |
+| `save` | `(model: XGBClassifier, path: Path = "data/processed/gbm_model.joblib") -> None` | Serialize fitted model to disk with joblib; creates parent dirs. |
+| `load` | `(path: Path = "data/processed/gbm_model.joblib") -> XGBClassifier` | Deserialize and return an XGBClassifier saved by `save()`. |
+
+## src.models.svm
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `train` | `(X: pd.DataFrame, y: pd.Series) -> SVMModel` | Fit a `StandardScaler` on `X_train` only, then fit `SVC(kernel='rbf', C=1.0, gamma='scale', class_weight='balanced', random_state=42, cache_size=500)`. Returns `SVMModel` TypedDict bundling both objects. |
+| `predict` | `(model: SVMModel, X: pd.DataFrame) -> np.ndarray` | Apply the training-fit scaler to `X`, then return class-label predictions (0 or 1) from the fitted SVC. |
+| `save` | `(model: SVMModel, path: Path = "data/processed/svm_model.joblib") -> None` | Serialize the `SVMModel` (scaler + clf) to disk with joblib; creates parent dirs. |
+| `load` | `(path: Path = "data/processed/svm_model.joblib") -> SVMModel` | Deserialize and return an `SVMModel` saved by `save()`. |
 
 ## src.evaluate
 

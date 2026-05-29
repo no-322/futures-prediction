@@ -23,3 +23,9 @@ In addition to this I also want a deeper understanding of everything I am coding
 
 ## 2026-05 - Wednesday
 I realised I made a mistake. I had the order `load` -> `split` -> `feature extraction` -> `label`. But this pipeline would need a rerun as test dataset would need a rerun of `feature extraction`. So changed the pipeline order to `load` -> `feature extraction` -> `split`  -> `label`
+
+## 2026-05 - Thursday
+
+HTML was added to log.md. Seems to be a bug. I need to figure out why this is happening. I also learnt about joblib model persistence and how we wouldn't have to retrain everytime, this will be handy for more complex models like SVM. So I am going to add it for the other models as well. 
+
+Turns out Claude injects XML into user message stream when a background task is run. When evaluation.py was written a background task of run all tests was trigerred. So this was logged in as well. It is interesting to note that while this is being logged, clarification questions asked post plan or during edit are not logged. 

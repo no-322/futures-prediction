@@ -1,6 +1,11 @@
+from pathlib import Path
+
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+
+_DEFAULT_PATH = Path("data/processed/rf_model.joblib")
 
 
 def train(X: pd.DataFrame, y: pd.Series) -> RandomForestClassifier:
@@ -39,6 +44,30 @@ def predict(model: RandomForestClassifier, X: pd.DataFrame) -> np.ndarray:
         Integer ndarray of predicted labels (0 or 1), shape (n_samples,).
     """
     return model.predict(X)
+
+
+def save(model: RandomForestClassifier, path: Path = _DEFAULT_PATH) -> None:
+    """Serialize a fitted RandomForestClassifier to disk with joblib.
+
+    Args:
+        model: Fitted RandomForestClassifier returned by train(); oob_score_ is preserved.
+        path: Destination file path; parent directories are created if absent.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, path)
+
+
+def load(path: Path = _DEFAULT_PATH) -> RandomForestClassifier:
+    """Deserialize a RandomForestClassifier previously saved by save().
+
+    Args:
+        path: Path to the .joblib file written by save().
+
+    Returns:
+        Fitted RandomForestClassifier with oob_score_ intact, identical to train() output.
+    """
+    return joblib.load(Path(path))
 
 
 if __name__ == "__main__":

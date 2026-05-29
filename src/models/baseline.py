@@ -1,6 +1,11 @@
+from pathlib import Path
+
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+
+_DEFAULT_PATH = Path("data/processed/baseline_model.joblib")
 
 
 def train(X: pd.DataFrame, y: pd.Series) -> LogisticRegression:
@@ -29,6 +34,30 @@ def predict(model: LogisticRegression, X: pd.DataFrame) -> np.ndarray:
         Integer ndarray of predicted labels (0 or 1), shape (n_samples,).
     """
     return model.predict(X)
+
+
+def save(model: LogisticRegression, path: Path = _DEFAULT_PATH) -> None:
+    """Serialize a fitted LogisticRegression to disk with joblib.
+
+    Args:
+        model: Fitted LogisticRegression returned by train().
+        path: Destination file path; parent directories are created if absent.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, path)
+
+
+def load(path: Path = _DEFAULT_PATH) -> LogisticRegression:
+    """Deserialize a LogisticRegression previously saved by save().
+
+    Args:
+        path: Path to the .joblib file written by save().
+
+    Returns:
+        Fitted LogisticRegression identical in state to the original train() output.
+    """
+    return joblib.load(Path(path))
 
 
 def predict_always_up(n: int) -> np.ndarray:

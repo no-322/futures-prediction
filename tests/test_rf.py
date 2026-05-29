@@ -7,7 +7,7 @@ import pytest
 from src.features import build_features
 from src.labels import build_labels
 from src.load import load_raw
-from src.models.rf import predict, train
+from src.models.rf import load, predict, save, train
 from src.split import split
 
 DATA_PATH = Path(__file__).parents[1] / "data" / "raw" / "data.csv"
@@ -44,3 +44,12 @@ def test_predict_shape(rf_results: tuple) -> None:
 def test_predict_binary(rf_results: tuple) -> None:
     _, X_test, _, _, model = rf_results
     assert set(predict(model, X_test)) <= {0, 1}
+
+
+def test_save_load_roundtrip(rf_results: tuple, tmp_path) -> None:
+    _, X_test, _, _, model = rf_results
+    path = tmp_path / "rf_model.joblib"
+    save(model, path)
+    loaded = load(path)
+    assert loaded.oob_score_ == model.oob_score_
+    np.testing.assert_array_equal(predict(model, X_test.iloc[:20]), predict(loaded, X_test.iloc[:20]))

@@ -162,3 +162,214 @@ write src/evaluate.py. This shows the accuracy, confusion matrix and compares to
 <status>completed</status>
 <summary>Background command "Run full test suite" completed (exit code 0)</summary>
 </task-notification>
+
+---
+## 2026-05-29 11:29:32
+
+The latest edit too the log.md file has added html. Check why this happened so that we can avoid it in the future
+
+---
+## 2026-05-29 11:32:54
+
+Yes, proceed
+
+---
+## 2026-05-29 11:37:10
+
+Add joblib model persistence to src/models/baseline.py and src/models/rf.py
+
+for consistency, since I'll add the same pattern to SVM and GBM next.
+
+Follow CLAUDE.md conventions. Use joblib (sklearn's recommended
+
+serialization for ML objects), not pickle.
+
+Each model file should expose:
+
+- save(trained, path) — serializes the model artifact to disk
+
+- load(path) — deserializes and returns the artifact in the same
+
+structure as train() returns
+
+Default save path: data/processed/{model_name}_model.joblib
+
+Constraints:
+
+- Keep the existing train()/predict() interface signatures unchanged.
+
+save/load are additions, not replacements.
+
+- For RF: the saved artifact must round-trip the OOB attribute
+
+(oob_score_) so it can be reported from a loaded model.
+
+- For LR: if there's a scaler or any preprocessing artifact, save it
+
+alongside the model in one structure (dict or dataclass) so a
+
+loaded LR is functionally identical to the freshly trained one.
+
+Tests:
+
+- Add a save/load round-trip test to tests/test_lr.py and
+
+tests/test_rf.py: train, save to a tmp path, load, assert
+
+predictions on a fixed input match exactly between original and
+
+loaded models.
+
+Housekeeping:
+
+- Add joblib to pyproject.toml dependencies (it's transitively
+
+installed via sklearn, but be explicit).
+
+- Update docs/MODULES.md with the new function signatures.
+
+- Don't modify evaluate.py / the orchestrator yet — I'll handle that
+
+once all four models share the save/load pattern.
+
+---
+## 2026-05-29 12:05:54
+
+Implement src/models/svm.py and tests/test_svm.py per CLAUDE.md.
+Follow the same interface pattern as src/models/rf.py (train/predict
+functions, returning a structured model artifact).
+
+Use sklearn.svm.SVC with these hyperparameters and rationale tied to
+ESL Ch 12:
+- kernel='rbf' — general-purpose nonlinear kernel
+- C=1.0 — sklearn default; document that log-spaced grid search
+(0.01–100) is deferred given the 50/50 design and one-week scope
+- gamma='scale' — feature-variance-adapted bandwidth (ESL 12.3.2)
+- class_weight='balanced'
+- probability=False — predict_proba is slow and not needed for
+accuracy comparison
+- random_state=42
+- cache_size=500
+
+CRITICAL: SVM is scale-sensitive. Fit a StandardScaler on X_train
+only, transform both. Persist the scaler with the model — predict()
+must use the training-fit scaler to transform X_test. Never fit a
+fresh scaler at test time. Add a unit test that asserts this
+explicitly.
+
+Save the trained model + scaler to data/processed/svm_model.joblib.
+
+The test should assert: training succeeds, prediction shape matches
+y_test.shape, predictions are reproducible with seed=42, and the
+test-time transform uses the training-fit scaler.
+
+Add a docstring at the top of svm.py linking each hyperparameter
+choice to its ESL reference. Note in a comment that SVC training is
+O(n²)–O(n³) in training rows; fallback options if training is
+intolerable are LinearSVC or subsampling — document but don't
+implement now.
+
+Also update docs/MODULES.md with the new functions per CLAUDE.md
+conventions.
+
+---
+## 2026-05-29 12:07:47
+
+Implement src/models/svm.py and tests/test_svm.py per CLAUDE.md.
+Follow the same interface pattern as src/models/rf.py (train/predict
+functions, returning a structured model artifact).
+
+Use sklearn.svm.SVC with these hyperparameters and rationale tied to
+ESL Ch 12:
+- kernel='rbf' — general-purpose nonlinear kernel
+- C=1.0 — sklearn default; document that log-spaced grid search
+(0.01–100) is deferred given the 50/50 design and one-week scope
+- gamma='scale' — feature-variance-adapted bandwidth (ESL 12.3.2)
+- class_weight='balanced'
+- probability=False — predict_proba is slow and not needed for
+accuracy comparison
+- random_state=42
+- cache_size=500
+
+CRITICAL: SVM is scale-sensitive. Fit a StandardScaler on X_train
+only, transform both. Persist the scaler with the model — predict()
+must use the training-fit scaler to transform X_test. Never fit a
+fresh scaler at test time. Add a unit test that asserts this
+explicitly.
+
+Save the trained model + scaler to data/processed/svm_model.joblib.
+
+The test should assert: training succeeds, prediction shape matches
+y_test.shape, predictions are reproducible with seed=42, and the
+test-time transform uses the training-fit scaler.
+
+
+Also update docs/MODULES.md with the new functions per CLAUDE.md
+conventions.
+
+---
+## 2026-05-29 12:49:15
+
+Implement src/models/gbm.py and tests/test_gbm.py per CLAUDE.md.
+
+Follow the same interface pattern as src/models/rf.py (train/predict
+
+functions, returning a structured model artifact). Add xgboost to
+
+pyproject.toml dependencies if it's not already there.
+
+Use xgboost.XGBClassifier with these hyperparameters and rationale
+
+tied to ESL Ch 10:
+
+- n_estimators=500 — fixed; early stopping deferred since we don't
+
+have a separate validation slice
+
+- learning_rate=0.05 — shrinkage per ESL 10.12; smaller LR with more
+
+trees generalizes better
+
+- max_depth=4 — weak learners per ESL 10.11; captures pairwise
+
+feature interactions, intentionally constrained because boosting's
+
+additive structure provides model complexity
+
+- subsample=0.8, colsample_bytree=0.8 — stochastic gradient boosting
+
+per ESL 10.12.2 (Friedman 1999)
+
+- reg_lambda=1.0 — L2 regularization on leaf weights
+
+- min_child_weight=1
+
+- objective='binary:logistic', eval_metric='logloss'
+
+- random_state=42, n_jobs=-1
+
+No scaler needed — GBM is scale-invariant (tree-based).
+
+Save the trained model to data/processed/gbm_model.joblib.
+
+The test should assert: training succeeds, prediction shape matches
+
+y_test.shape, predictions are reproducible with seed=42.
+
+
+
+Also update docs/MODULES.md with the new functions per CLAUDE.md
+
+conventions.
+
+
+---
+## 2026-05-29 13:03:27
+
+Add in evaluate.py to call GBM and SVM and run the entire pipeline
+
+
+---
+## 2026-05-29 17:53:28
+
+stage everything and commit
