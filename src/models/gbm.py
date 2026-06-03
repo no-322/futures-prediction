@@ -38,30 +38,41 @@ from xgboost import XGBClassifier
 _DEFAULT_PATH = Path("data/processed/gbm_model.joblib")
 
 
-def train(X: pd.DataFrame, y: pd.Series) -> XGBClassifier:
+def train(
+    X: pd.DataFrame,
+    y: pd.Series,
+    params: dict | None = None,
+) -> XGBClassifier:
     """Fit an XGBClassifier on the training feature matrix.
 
     Args:
         X: Feature matrix from build_features(), shape (n_samples, 20).
         y: Binary labels from build_labels(), shape (n_samples,).
+        params: Optional hyperparameter overrides from config.model_params().
+            Supported keys match XGBClassifier kwargs. random_state is always
+            42 regardless of params.
 
     Returns:
         Fitted XGBClassifier instance.
     """
-    model = XGBClassifier(
-        n_estimators=500,
-        learning_rate=0.05,
-        max_depth=4,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        reg_lambda=1.0,
-        min_child_weight=1,
-        objective="binary:logistic",
-        eval_metric="logloss",
-        random_state=42,
-        n_jobs=-1,
-    )
+    p: dict = {
+        "n_estimators": 500,
+        "learning_rate": 0.05,
+        "max_depth": 4,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_lambda": 1.0,
+        "min_child_weight": 1,
+        "objective": "binary:logistic",
+        "eval_metric": "logloss",
+        "n_jobs": -1,
+    }
+    if params:
+        p.update(params)
+    p["random_state"] = 42
+    model = XGBClassifier(**p)
     model.fit(X, y)
+    save(model)
     return model
 
 

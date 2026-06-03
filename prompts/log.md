@@ -373,3 +373,37 @@ Add in evaluate.py to call GBM and SVM and run the entire pipeline
 ## 2026-05-29 17:53:28
 
 stage everything and commit
+---
+## 2026-05-29 23:35:53
+
+why are the changes I propose during the plan mode not logged in log.md
+
+---
+## 2026-05-29 23:50:51
+
+In the training dataset calculate count of label 0 and label 1. I am checking for class imbalance
+
+---
+## 2026-06-03 22:55:20
+
+In order to make the code modula. I want the following to be the workflow for an automated pipeline- 1. User selects input and what algorithm to use. 2. The feature engineering module is called. 3. Automated machine creation module (ie ML predictions) 4. Statistics module is called providing performance metrics
+
+---
+## 2026-06-03 23:02:11
+
+Yes we will go ahead with this format. We also need to ensure that during each call, machine does not retrain again and can reuse the joblib file wherever available. Training modules also need to be edited so that anytime training is done, a joblib file is automatically created.
+
+---
+## 2026-06-03 23:42:08
+
+We need to have a centralized config file that can be amended to include training size. I am also thinking all models will use parameters from this as input. Later on when we create the GUI any modification introduced in the GUI will be written to the config file and it will run from there. DOes this make sense?
+
+---
+## 2026-06-03 23:44:13
+
+Yes implement it
+
+---
+## 2026-06-04 00:11:09
+
+stage and commit everything

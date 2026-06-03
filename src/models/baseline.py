@@ -8,18 +8,29 @@ from sklearn.linear_model import LogisticRegression
 _DEFAULT_PATH = Path("data/processed/baseline_model.joblib")
 
 
-def train(X: pd.DataFrame, y: pd.Series) -> LogisticRegression:
+def train(
+    X: pd.DataFrame,
+    y: pd.Series,
+    params: dict | None = None,
+) -> LogisticRegression:
     """Fit a logistic regression classifier on the training feature matrix.
 
     Args:
         X: Feature matrix from build_features(), shape (n_samples, 20).
         y: Binary labels from build_labels(), shape (n_samples,).
+        params: Optional hyperparameter overrides from config.model_params().
+            Supported keys: max_iter. random_state is always 42.
 
     Returns:
         Fitted LogisticRegression instance.
     """
-    model = LogisticRegression(random_state=42, max_iter=1000)
+    p: dict = {"max_iter": 1000}
+    if params:
+        p.update(params)
+    p["random_state"] = 42
+    model = LogisticRegression(**p)
     model.fit(X, y)
+    save(model)
     return model
 
 

@@ -8,28 +8,39 @@ from sklearn.ensemble import RandomForestClassifier
 _DEFAULT_PATH = Path("data/processed/rf_model.joblib")
 
 
-def train(X: pd.DataFrame, y: pd.Series) -> RandomForestClassifier:
+def train(
+    X: pd.DataFrame,
+    y: pd.Series,
+    params: dict | None = None,
+) -> RandomForestClassifier:
     """Fit a Random Forest classifier on the training feature matrix.
 
     Args:
         X: Feature matrix from build_features(), shape (n_samples, 20).
         y: Binary labels from build_labels(), shape (n_samples,).
+        params: Optional hyperparameter overrides from config.model_params().
+            Supported keys match RandomForestClassifier kwargs. random_state
+            is always 42 regardless of params.
 
     Returns:
         Fitted RandomForestClassifier instance with oob_score_ attribute set.
     """
-    model = RandomForestClassifier(
-        n_estimators=500,
-        max_depth=None,
-        min_samples_leaf=5,
-        max_features="sqrt",
-        oob_score=True,
-        bootstrap=True,
-        random_state=42,
-        class_weight="balanced",
-        n_jobs=-1,
-    )
+    p: dict = {
+        "n_estimators": 500,
+        "max_depth": None,
+        "min_samples_leaf": 5,
+        "max_features": "sqrt",
+        "oob_score": True,
+        "bootstrap": True,
+        "class_weight": "balanced",
+        "n_jobs": -1,
+    }
+    if params:
+        p.update(params)
+    p["random_state"] = 42
+    model = RandomForestClassifier(**p)
     model.fit(X, y)
+    save(model)
     return model
 
 

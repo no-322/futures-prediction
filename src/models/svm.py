@@ -43,7 +43,11 @@ class SVMModel(TypedDict):
     clf: SVC
 
 
-def train(X: pd.DataFrame, y: pd.Series) -> SVMModel:
+def train(
+    X: pd.DataFrame,
+    y: pd.Series,
+    params: dict | None = None,
+) -> SVMModel:
     """Fit a StandardScaler and SVC on the training feature matrix.
 
     The scaler is fit exclusively on X (no test-set information leaks in).
@@ -53,24 +57,32 @@ def train(X: pd.DataFrame, y: pd.Series) -> SVMModel:
     Args:
         X: Feature matrix from build_features(), shape (n_samples, 20).
         y: Binary labels from build_labels(), shape (n_samples,).
+        params: Optional hyperparameter overrides from config.model_params().
+            Supported keys match SVC kwargs. random_state is always 42
+            regardless of params.
 
     Returns:
         SVMModel with keys 'scaler' (fitted StandardScaler) and 'clf' (fitted SVC).
     """
+    p: dict = {
+        "kernel": "rbf",
+        "C": 1.0,
+        "gamma": "scale",
+        "class_weight": "balanced",
+        "probability": False,
+        "cache_size": 500,
+    }
+    if params:
+        p.update(params)
+    p["random_state"] = 42
+
     scaler: StandardScaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-
-    clf = SVC(
-        kernel="rbf",
-        C=1.0,
-        gamma="scale",
-        class_weight="balanced",
-        probability=False,
-        random_state=42,
-        cache_size=500,
-    )
+    clf = SVC(**p)
     clf.fit(X_scaled, y)
-    return SVMModel(scaler=scaler, clf=clf)
+    model = SVMModel(scaler=scaler, clf=clf)
+    save(model)
+    return model
 
 
 def predict(model: SVMModel, X: pd.DataFrame) -> np.ndarray:

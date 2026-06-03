@@ -13,7 +13,7 @@ One entry per function per the project convention: one pseudo-code line = one fu
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `split` | `(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]` | Time-ordered 50/50 split: first half → train, second half → test. Both returned with reset indices. Accepts raw df or feature matrix; timestamp validation only runs when `"Date and Time"` column is present. |
+| `split` | `(df: pd.DataFrame, train_size: float = 0.5) -> tuple[pd.DataFrame, pd.DataFrame]` | Time-ordered split: first `train_size` fraction → train, remainder → test. Both returned with reset indices. Accepts raw df or feature matrix; timestamp validation only runs when `"Date and Time"` column is present. Raises `ValueError` if `train_size` not in (0, 1). |
 
 ## src.features
 
@@ -31,7 +31,7 @@ One entry per function per the project convention: one pseudo-code line = one fu
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `train` | `(X: pd.DataFrame, y: pd.Series) -> LogisticRegression` | Fit logistic regression on training features and labels; `random_state=42`, `max_iter=1000`. |
+| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None) -> LogisticRegression` | Fit logistic regression; defaults `max_iter=1000`, `random_state=42` (always enforced). `params` dict from `config.model_params()` overrides defaults. Auto-saves to `data/processed/baseline_model.joblib`. |
 | `predict` | `(model: LogisticRegression, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted logistic regression. |
 | `predict_always_up` | `(n: int) -> np.ndarray` | Baseline: return an array of `n` ones (always predict up). |
 | `predict_last_direction` | `(y_train: pd.Series, y_test: pd.Series) -> np.ndarray` | Baseline: for each test row, predict the direction of the previous bar; first row uses last training label. |
@@ -42,16 +42,32 @@ One entry per function per the project convention: one pseudo-code line = one fu
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `train` | `(X: pd.DataFrame, y: pd.Series) -> RandomForestClassifier` | Fit Random Forest (500 trees, `sqrt` features, `min_samples_leaf=5`, `class_weight="balanced"`, `oob_score=True`, `random_state=42`). OOB accuracy available as `model.oob_score_`. |
+| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None) -> RandomForestClassifier` | Fit Random Forest; defaults: 500 trees, `sqrt` features, `min_samples_leaf=5`, `class_weight="balanced"`, `oob_score=True`, `random_state=42` (always enforced). `params` overrides defaults. Auto-saves to `data/processed/rf_model.joblib`. |
 | `predict` | `(model: RandomForestClassifier, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted Random Forest. |
 | `save` | `(model: RandomForestClassifier, path: Path = "data/processed/rf_model.joblib") -> None` | Serialize fitted model to disk with joblib; `oob_score_` is preserved. Creates parent dirs. |
 | `load` | `(path: Path = "data/processed/rf_model.joblib") -> RandomForestClassifier` | Deserialize and return a RandomForestClassifier saved by `save()`, with `oob_score_` intact. |
+
+## src.config
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `load_config` | `(path: Path = "config.yaml") -> dict` | Parse `config.yaml` with `yaml.safe_load` and return the full config dict. Raises `FileNotFoundError` if the file is absent. |
+| `model_params` | `(config: dict, algo: str) -> dict` | Return a copy of `config["models"][algo]`; empty dict if the algo key is missing. Used by pipeline to pass hyperparameters to each `train()` call. |
+
+## src.pipeline
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `run` | `(algo: str, data_path: Path = "data/raw/data.csv", force_retrain: bool = False) -> PipelineResult` | Full pipeline for one algo: load data → feature engineering → load-or-train model → evaluate. If `data/processed/<algo>_model.joblib` exists and `force_retrain=False`, loads from disk instead of retraining. Pass `_dataset` kwarg to reuse a pre-loaded split (used internally by `--algo all`). |
+| `_build_dataset` | `(data_path: Path) -> tuple[DataFrame, DataFrame, Series, Series]` | Load raw CSV and return `(X_train, X_test, y_train, y_test)` via `load_raw → build_features → split → build_labels`. |
+| `_load_or_train` | `(algo: str, X_train, y_train, force_retrain: bool) -> Any` | Load saved joblib if present and `force_retrain=False`; otherwise call the algo's `train()` (which auto-saves). |
+| `_get_predictions` | `(algo: str, model: Any, X_test: DataFrame) -> np.ndarray` | Dispatch to the correct `predict()` function for the given algo. |
 
 ## src.models.gbm
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `train` | `(X: pd.DataFrame, y: pd.Series) -> XGBClassifier` | Fit `XGBClassifier(n_estimators=500, learning_rate=0.05, max_depth=4, subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0, objective='binary:logistic', random_state=42)`. No scaler needed — GBM is scale-invariant. |
+| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None) -> XGBClassifier` | Fit XGBClassifier with defaults from docstring; `random_state=42` always enforced. `params` overrides defaults. Auto-saves to `data/processed/gbm_model.joblib`. |
 | `predict` | `(model: XGBClassifier, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted XGBClassifier. |
 | `save` | `(model: XGBClassifier, path: Path = "data/processed/gbm_model.joblib") -> None` | Serialize fitted model to disk with joblib; creates parent dirs. |
 | `load` | `(path: Path = "data/processed/gbm_model.joblib") -> XGBClassifier` | Deserialize and return an XGBClassifier saved by `save()`. |
@@ -60,7 +76,7 @@ One entry per function per the project convention: one pseudo-code line = one fu
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `train` | `(X: pd.DataFrame, y: pd.Series) -> SVMModel` | Fit a `StandardScaler` on `X_train` only, then fit `SVC(kernel='rbf', C=1.0, gamma='scale', class_weight='balanced', random_state=42, cache_size=500)`. Returns `SVMModel` TypedDict bundling both objects. |
+| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None) -> SVMModel` | Fit `StandardScaler` on `X_train` only, then fit `SVC` with defaults from docstring; `random_state=42` always enforced. `params` overrides defaults. Auto-saves to `data/processed/svm_model.joblib`. |
 | `predict` | `(model: SVMModel, X: pd.DataFrame) -> np.ndarray` | Apply the training-fit scaler to `X`, then return class-label predictions (0 or 1) from the fitted SVC. |
 | `save` | `(model: SVMModel, path: Path = "data/processed/svm_model.joblib") -> None` | Serialize the `SVMModel` (scaler + clf) to disk with joblib; creates parent dirs. |
 | `load` | `(path: Path = "data/processed/svm_model.joblib") -> SVMModel` | Deserialize and return an `SVMModel` saved by `save()`. |
