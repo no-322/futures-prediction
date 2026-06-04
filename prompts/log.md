@@ -432,3 +432,18 @@ Retrain SVM
 ## 2026-06-04 09:18:28
 
 stage and commit the GUI and pipeline changes
+
+---
+## 2026-06-04 18:54:58
+
+Let us add plotting libraries to the conda environment. I need to do basic eda to check for class imbalance in the data. I will be doing it in notebooks/eda.ipynb. We need to check for count of mkt closing below open vs above. Then find the return over the period we have the data for and what is the average points by which it goes up when it does and what it is when it goes down
+
+---
+## 2026-06-04 19:01:02
+
+The code for src.load is wrong. It is not referencing the file correctly. Gives an error
+
+---
+## 2026-06-04 19:41:40
+
+stage and commit all changes. Do not touch changes to notebook.md
