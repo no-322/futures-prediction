@@ -447,3 +447,18 @@ The code for src.load is wrong. It is not referencing the file correctly. Gives 
 ## 2026-06-04 19:41:40
 
 stage and commit all changes. Do not touch changes to notebook.md
+
+---
+## 2026-06-04 19:49:25
+
+We will now be experimenting with various feature-engineering and training iterations with the aim of improving performance. We can do this as seperate folder/files or a whole new branch. Suggest whichever is best. We will be testing with random forest as it is quick and complex. Later we can train all models in the best engineered pipeline. We will start by building in two different ways.
+
+---
+## 2026-06-04 20:04:42
+
+We will now be experimenting with various feature-engineering and training iterations with the aim of improving performance. We can do this as seperate folder/files or a whole new branch. Suggest whichever is best. We will be testing with random forest as it is quick and complex. Later we can train all models in the best engineered pipeline. We will start by building in two different ways. 1. three-clases: instead of up and down, we have up, down and flat. Data label would be up if close>open; no move if close=open and down if close<open. 2. A two-stage, point in time: first model predicts whether next bar will move beyond threshold(tradeable vs not)  and the second bar will predict direction. combining both we get 3 labels no trade, long or short. We will runn full cascade inside each TimeSeriesSplit fold to train both stages and tune the threshold on the training window. For evaluation we will use per-class and overall recall, macro-F1, accuracy and MCC for 1 and for 2 we will have real metrics as coverage- what fraction of bars the gate chooses to trade and conditional hit rates- directional accuracy among traded bars. As a debug diagnostic we will also have score moved beyond threshold classifier specially on recall and as debug diagnostic for direction classifier use MCC on bars that genuinely moved
+
+---
+## 2026-06-04 22:58:14
+
+yes lets commit and then proceed
