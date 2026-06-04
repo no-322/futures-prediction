@@ -32,3 +32,9 @@ Turns out Claude injects XML into user message stream when a background task is 
 
 ## 2026-05-29 - Friday
 Key result: the difference observed in accuracy vs prediction in SVM is because we balanced class only in SVM case. When we balance class accuracy goes down but precision increases. With class imbalance the model does not take risk and predicts a lot of down. 
+
+## 2026-06-03 - Wednesday
+
+Created pipeline.py that is an automated end to end model that runs based on selected model. We can use the CLI to give parameters on what model to run and change the other previously static parameters as well- random state is still fixed at 42. Created a yaml file that will act as the intermediary between the GUI and CLI. All the changes will be made in the config based on the user inputs. The parameters are then passed on to the pipeline and individual files.
+
+Created the GUI. I wanted to have an info button that shows if a trained model already exists. But had issue because json file was needed that tracks models trained with GUI but not CLI. Reworking the pipeline so that we have a centralized metadata file to track all the available trained joblib files. 

@@ -407,3 +407,28 @@ Yes implement it
 ## 2026-06-04 00:11:09
 
 stage and commit everything
+
+---
+## 2026-06-04 00:36:48
+
+Let us build the GUI now. Use streamlit for the GUI. It should have 2 sections. The training section and the prediction section. The training section is where the user can uplaod a file and select which model to run. Use a dropdown box to show available models, along with a text box to enter percentage of data to be used as training. The remaining will be used as test. There should be an advanced dropdown that lets the user modify the hyperparameters once model is selected. The advanced section can be hidden by an expand/collapse button. All the mentioned fields should have a prefilled default value mapping to the current pipeline we have in place. For the predict section the user will be allowed to give path to file with features matching the training input. If the column names don't match then ask the user to select file again. When they run using predict, statistics.md should be created (it is not added to the pipleine as of now). They should be able to click on the statistics file and view it. Both the training and test sections should have an info button that shows what the last trained data was and what hyperparameters and parameters were set. Use the following colors for the theme of the GUI: Hexcodes- 254E70, 37718E, 8EE3EF, AEF3E7, 7E4E60. Let me know if you think further modifications are needed
+
+---
+## 2026-06-04 00:56:02
+
+WHy does the app show no trained model found when we do have joblib files saved
+
+---
+## 2026-06-04 01:00:07
+
+I still see "No training run recorded yet." when I select Logistic regression or randomforest despite having joblib file for both
+
+---
+## 2026-06-04 01:14:04
+
+Retrain SVM
+
+---
+## 2026-06-04 09:18:28
+
+stage and commit the GUI and pipeline changes

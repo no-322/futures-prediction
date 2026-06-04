@@ -16,6 +16,8 @@ instead of retrained. Pass --force to override and retrain unconditionally.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -30,6 +32,8 @@ from src.load import load_raw
 from src.split import split
 
 _ALGO_CHOICES = ("baseline", "rf", "gbm", "svm")
+
+METADATA_PATH = Path("data/processed/training_metadata.json")
 
 _DEFAULT_PATHS: dict[str, Path] = {
     "baseline": Path("data/processed/baseline_model.joblib"),
@@ -79,14 +83,56 @@ def _build_dataset(
     return X_train, X_test, y_train, y_test
 
 
+def _write_training_metadata(
+    algo: str,
+    result: "PipelineResult",
+    data_path: Path,
+    train_size: float,
+    params: dict | None,
+) -> None:
+    """Write (or update) the per-model entry in training_metadata.json.
+
+    Reads the existing file (if present), updates only the entry for algo,
+    and writes back — other models' entries are preserved.
+
+    Args:
+        algo: Model key ('baseline', 'rf', 'gbm', 'svm').
+        result: PipelineResult returned by run().
+        data_path: Path to the training CSV used.
+        train_size: Fraction of data used for training.
+        params: Hyperparameter dict passed to train(); None if defaults used.
+    """
+    all_meta: dict = {}
+    if METADATA_PATH.exists():
+        try:
+            all_meta = json.loads(METADATA_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            all_meta = {}
+
+    all_meta[algo] = {
+        "display_name": _DISPLAY_NAMES[algo],
+        "data_path":    str(data_path),
+        "train_size":   train_size,
+        "n_test":       int(result["y_true"].shape[0]),
+        "params":       params or {},
+        "metrics": {
+            "accuracy": float(result["metrics"]["accuracy"]),
+            "recall":   float(result["metrics"]["recall"]),
+        },
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+    }
+    METADATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    METADATA_PATH.write_text(json.dumps(all_meta, indent=2))
+
+
 def _load_or_train(
     algo: str,
     X_train: pd.DataFrame,
     y_train: pd.Series,
     force_retrain: bool,
     params: dict | None = None,
-) -> Any:
-    """Return a fitted model, loading from disk when possible.
+) -> tuple[Any, bool]:
+    """Return a fitted model and whether training actually occurred.
 
     Args:
         algo: One of 'baseline', 'rf', 'gbm', 'svm'.
@@ -97,7 +143,7 @@ def _load_or_train(
             retraining. Ignored when loading from disk.
 
     Returns:
-        Fitted model artifact (type varies by algo).
+        (model, was_trained) — model artifact and True if trained, False if loaded.
     """
     from src.models import baseline, rf
     from src.models.gbm import load as gbm_load
@@ -110,24 +156,24 @@ def _load_or_train(
     if path.exists() and not force_retrain:
         print(f"  [{algo}] Loading saved model from {path}")
         if algo == "baseline":
-            return baseline.load(path)
+            return baseline.load(path), False
         if algo == "rf":
-            return rf.load(path)
+            return rf.load(path), False
         if algo == "gbm":
-            return gbm_load(path)
+            return gbm_load(path), False
         if algo == "svm":
-            return svm_load(path)
+            return svm_load(path), False
 
     suffix = " (slow — O(n²))" if algo == "svm" else ""
     print(f"  [{algo}] Training{suffix}...")
     if algo == "baseline":
-        return baseline.train(X_train, y_train, params=params)
+        return baseline.train(X_train, y_train, params=params), True
     if algo == "rf":
-        return rf.train(X_train, y_train, params=params)
+        return rf.train(X_train, y_train, params=params), True
     if algo == "gbm":
-        return gbm_train(X_train, y_train, params=params)
+        return gbm_train(X_train, y_train, params=params), True
     if algo == "svm":
-        return svm_train(X_train, y_train, params=params)
+        return svm_train(X_train, y_train, params=params), True
 
     raise ValueError(f"Unknown algo: {algo!r}")
 
@@ -191,7 +237,7 @@ def run(
     else:
         X_train, X_test, y_train, y_test = _build_dataset(data_path, train_size)
 
-    model = _load_or_train(algo, X_train, y_train, force_retrain, params=params)
+    model, was_trained = _load_or_train(algo, X_train, y_train, force_retrain, params=params)
     y_pred = _get_predictions(algo, model, X_test)
     y_true = y_test.to_numpy()
 
@@ -200,7 +246,13 @@ def run(
         "recall": evaluate.recall(y_true, y_pred),
         "confusion": evaluate.confusion(y_true, y_pred),
     }
-    return PipelineResult(algo=algo, model=model, y_true=y_true, y_pred=y_pred, metrics=metrics)
+    result = PipelineResult(algo=algo, model=model, y_true=y_true, y_pred=y_pred, metrics=metrics)
+
+    if was_trained:
+        effective_data_path = data_path if _dataset is None else Path("(pre-loaded dataset)")
+        _write_training_metadata(algo, result, effective_data_path, train_size, params)
+
+    return result
 
 
 def _print_result(result: PipelineResult) -> None:
