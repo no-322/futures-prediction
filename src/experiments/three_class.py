@@ -3,18 +3,20 @@
 Labels: 0 = down (Close < Open), 1 = up (Close > Open), 2 = flat (Close == Open).
 
 Run with:
-    python -m src.experiments.three_class
+    python -m src.experiments.three_class                    # v1 features, fixed HP
+    python -m src.experiments.three_class --features v2     # v2 features, fixed HP
+    python -m src.experiments.three_class --features v2 --tune-hp  # v2 + walk-forward HP
 """
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 
 from src.config import load_config, model_params
 from src.features import build_features
@@ -24,6 +26,16 @@ from src.experiments.metrics import mcc, macro_f1, per_class_recall
 
 _CLASS_NAMES = {0: "down", 1: "up", 2: "flat"}
 _RESULTS_PATH = Path("docs/exp_three_class_results.md")
+_RESULTS_PATH_V2 = Path("docs/exp_three_class_v2_results.md")
+
+_HP_GRID = {
+    "n_estimators":    [50, 100],      # lightweight inner models
+    "max_depth":       [None, 5, 10],
+    "min_samples_leaf": [1, 5, 10],
+    "max_features":    ["sqrt", "log2"],
+}
+_HP_N_ITER    = 4    # halved from 8 — combined with n_jobs=4 gives ~4× speedup
+_HP_INNER_CV  = 3
 
 
 def _build_rf(params: dict) -> RandomForestClassifier:
@@ -33,28 +45,72 @@ def _build_rf(params: dict) -> RandomForestClassifier:
     return RandomForestClassifier(**p)
 
 
+def _tune_hyperparams(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+) -> dict:
+    """Walk-forward inner CV to select RF hyperparameters.
+
+    Uses RandomizedSearchCV with TimeSeriesSplit(n_splits=3) on the outer
+    fold's training window. Inner estimators use n_estimators=100, n_jobs=1
+    to bound memory; the final model upgrades to n_estimators=500, n_jobs=-1.
+
+    Args:
+        X_train: Training features for the current outer fold.
+        y_train: Training labels.
+
+    Returns:
+        Dict of best hyperparameters ready to pass to _build_rf().
+    """
+    search = RandomizedSearchCV(
+        RandomForestClassifier(
+            random_state=42,
+            class_weight="balanced",
+            n_jobs=1,
+        ),
+        param_distributions=_HP_GRID,
+        n_iter=_HP_N_ITER,
+        cv=TimeSeriesSplit(n_splits=_HP_INNER_CV),
+        scoring="f1_macro",
+        n_jobs=4,
+        random_state=42,
+        refit=False,
+        error_score=0.0,
+    )
+    search.fit(X_train, y_train)
+    best = dict(search.best_params_)
+    best["n_estimators"] = 500
+    best["n_jobs"] = -1
+    return best
+
+
 def run(
     n_splits: int = 5,
     config: dict | None = None,
+    build_features_fn: Callable | None = None,
+    tune_hp: bool = False,
 ) -> list[dict[str, Any]]:
     """Run TimeSeriesSplit CV for the three-class labelling scheme.
 
     Args:
-        n_splits: Number of TimeSeriesSplit folds.
+        n_splits: Number of outer TimeSeriesSplit folds.
         config: Parsed config dict; RF params read from config['models']['rf'].
                 Defaults applied if None.
+        build_features_fn: Feature-building callable with signature
+            (df: DataFrame) -> DataFrame.  Defaults to build_features (v1).
+        tune_hp: If True, use nested walk-forward CV (inner TSS(3),
+            RandomizedSearchCV n_iter=8) to select RF hyperparameters per fold.
 
     Returns:
-        List of per-fold result dicts with keys:
-            fold, n_train, n_test, accuracy, mcc, macro_f1, per_class_recall,
-            class_counts_train, class_counts_test.
+        List of per-fold result dicts.
     """
     cfg = config or load_config()
     rf_params = model_params(cfg, "rf")
+    feat_fn = build_features_fn or build_features
 
     data_path = Path(cfg["data"]["path"])
     df = load_raw(data_path)
-    features = build_features(df)
+    features = feat_fn(df)
     raw_align = df.iloc[4:].reset_index(drop=True)
 
     X = features.values
@@ -67,7 +123,13 @@ def run(
         X_train, X_test = X[train_idx], X[test_idx]
         y_train, y_test = y[train_idx], y[test_idx]
 
-        model = _build_rf(rf_params)
+        if tune_hp:
+            print(f"  Fold {fold_i}: tuning hyperparameters...")
+            best_params = _tune_hyperparams(X_train, y_train)
+        else:
+            best_params = rf_params
+
+        model = _build_rf(best_params)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
@@ -79,6 +141,7 @@ def run(
             "mcc":                mcc(y_test, y_pred),
             "macro_f1":           macro_f1(y_test, y_pred),
             "per_class_recall":   per_class_recall(y_test, y_pred),
+            "best_hp":            best_params,
             "class_counts_train": {int(k): int(v) for k, v in
                                    zip(*np.unique(y_train, return_counts=True))},
             "class_counts_test":  {int(k): int(v) for k, v in
@@ -91,20 +154,14 @@ def run(
     return results
 
 
-def summarise(results: list[dict[str, Any]]) -> str:
-    """Format per-fold results as a markdown report.
-
-    Args:
-        results: List returned by run().
-
-    Returns:
-        Markdown string ready to write to docs/exp_three_class_results.md.
-    """
+def summarise(results: list[dict[str, Any]], label: str = "") -> str:
+    """Format per-fold results as a markdown report."""
     scalar_keys = ["accuracy", "mcc", "macro_f1"]
     all_classes = sorted({k for r in results for k in r["per_class_recall"]})
+    tag = f" [{label}]" if label else ""
 
     lines = [
-        "# Experiment 1 — Three-Class Direction Classifier\n\n",
+        f"# Experiment 1 — Three-Class Direction Classifier{tag}\n\n",
         f"Folds: {len(results)}  |  Model: Random Forest  |  "
         "Labels: 0=down, 1=up, 2=flat\n\n",
         "## Scalar metrics (mean ± std across folds)\n\n",
@@ -144,10 +201,38 @@ def summarise(results: list[dict[str, Any]]) -> str:
 
 
 if __name__ == "__main__":
-    print("Running Experiment 1 — Three-class RF with TimeSeriesSplit CV")
-    results = run()
-    report = summarise(results)
-    _RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _RESULTS_PATH.write_text(report)
-    print(f"\nResults written to {_RESULTS_PATH}")
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Experiment 1 — Three-class RF classifier"
+    )
+    parser.add_argument(
+        "--features", choices=["v1", "v2"], default="v1",
+        help="Feature set: v1 = 20 lagged OHLCV, v2 = 49 engineered features",
+    )
+    parser.add_argument(
+        "--tune-hp", action="store_true",
+        help="Enable nested walk-forward hyperparameter selection per fold",
+    )
+    args = parser.parse_args()
+
+    if args.features == "v2":
+        from src.experiments.features_v2 import build_features_v2
+        feat_fn    = build_features_v2
+        out_path   = _RESULTS_PATH_V2
+        run_label  = "v2 features"
+    else:
+        feat_fn    = None
+        out_path   = _RESULTS_PATH
+        run_label  = "v1 features"
+
+    if args.tune_hp:
+        run_label += " + walk-forward HP tuning"
+
+    print(f"Running Experiment 1 — Three-class RF  [{run_label}]")
+    results = run(build_features_fn=feat_fn, tune_hp=args.tune_hp)
+    report  = summarise(results, label=run_label)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report)
+    print(f"\nResults written to {out_path}")
     print(report)

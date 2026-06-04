@@ -462,3 +462,13 @@ We will now be experimenting with various feature-engineering and training itera
 ## 2026-06-04 22:58:14
 
 yes lets commit and then proceed
+
+---
+## 2026-06-04 23:02:29
+
+Let us now add VWAP deviation, RSI, rolling volatility- 1 min, 5min and 15 min horizons, MACD signals and time-of-day cyclic encoding using sin/cos. Use walk-forward validation with TimeSeriesSplit (5 folds) for hyperparameter selection
+
+---
+## 2026-06-05 02:37:14
+
+Commit all changes
