@@ -507,3 +507,26 @@ you seriously need to reconsider your time estimates. You said 75 mins approx an
 ## 2026-06-05 19:53:52
 
 you seriously need to reconsider your time estimates. You said 75 mins approx and its been near 2.5 hrs
+
+---
+## 2026-06-05 21:52:22
+
+Do we have the statistics module in both the branches?
+
+---
+## 2026-06-05 22:05:52
+
+We need a module diagram. Use Mermaid module diagram. This should show how the entire pipeline works
+
+---
+## 2026-06-05 22:17:48
+
+Parse error on line 59:
+...OCS    PIPE -->|run()| BASE & RF & GBM
+----------------------^
+Expecting 'SQE', 'DOUBLECIRCLEEND', 'PE', '-)', 'STADIUMEND', 'SUBROUTINEEND', 'PIPE', 'CYLINDEREND', 'DIAMOND_STOP', 'TAGEND', 'TRAPEND', 'INVTRAPEND', 'UNICODE_TEXT', 'TEXT', 'TAGSTART', got 'PS'
+
+---
+## 2026-06-05 22:23:30
+
+commit all changes including notebook.md and push both branches.

@@ -38,3 +38,15 @@ Key result: the difference observed in accuracy vs prediction in SVM is because 
 Created pipeline.py that is an automated end to end model that runs based on selected model. We can use the CLI to give parameters on what model to run and change the other previously static parameters as well- random state is still fixed at 42. Created a yaml file that will act as the intermediary between the GUI and CLI. All the changes will be made in the config based on the user inputs. The parameters are then passed on to the pipeline and individual files.
 
 Created the GUI. I wanted to have an info button that shows if a trained model already exists. But had issue because json file was needed that tracks models trained with GUI but not CLI. Reworking the pipeline so that we have a centralized metadata file to track all the available trained joblib files. 
+
+## 2026-06-04 Thursday
+
+Made some interesting discovery. There are nearly 145k records where mkt has moved up and 142k where it moved with average move being in the same order [eda notebook](../notebooks/eda.ipynb) .  But there are 262k records where mkt hasn't moved at all. 
+
+Another interesting point to note is that in the first 50% of the data mkt is going down a lot and in the next 50% mkt is rising more. So our training split may not be the ideal way. We will need to introduce some method that can incorporate a better way to train without adding look-ahead bias. 
+
+I am trying two new models- 3 class classification system and another two stage method that classifies whether market moves and the other classifies direction 
+
+## 2026-06-05 Friday
+
+I noticed that although classification of movement is fairly good but direction prediction seems to be random, so trying out HMM to see if prediction in particular regimes is more fruitful. 
