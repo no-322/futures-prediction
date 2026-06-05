@@ -213,6 +213,10 @@ def run(
 
     tss     = TimeSeriesSplit(n_splits=n_splits)
     results: list[dict[str, Any]] = []
+    all_y_true: list[np.ndarray] = []
+    all_y_pred: list[np.ndarray] = []
+    last_gate_model  = None
+    last_dir_models: dict[int, RandomForestClassifier] = {}
 
     for fold_i, (train_idx, test_idx) in enumerate(tss.split(X)):
         X_train,    X_test    = X[train_idx],    X[test_idx]
@@ -281,6 +285,10 @@ def run(
             for r in [0, 1]:
                 if dir_models[r] is None:
                     dir_models[r] = pooled_dir_model
+
+        # Track last-fold models for joblib saving
+        last_gate_model = gate_model
+        last_dir_models = {r: m for r, m in dir_models.items() if m is not None}
 
         # -- predict on test set ----------------------------------------------
         gated_mask           = gate_pred == 1
@@ -362,6 +370,13 @@ def run(
         }
         results.append(fold_result)
 
+        # Accumulate gated predictions for post-hoc statistics
+        valid_overall_pred = dir_pred_full[gated_mask]
+        valid_mask = valid_overall_pred >= 0
+        if valid_mask.sum() > 0:
+            all_y_true.append(dir_test[gated_mask][valid_mask])
+            all_y_pred.append(valid_overall_pred[valid_mask])
+
         print(
             f"  Fold {fold_i}: threshold={threshold:.4f}  "
             f"coverage={fold_result['overall']['coverage']:.3f}  "
@@ -370,7 +385,33 @@ def run(
             f"regime_counts={fold_result['regime_counts_test']}"
         )
 
+    _save_predictions(all_y_true, all_y_pred, "regime_v2")
+    import joblib as _jl
+    proc = Path("data/processed")
+    proc.mkdir(parents=True, exist_ok=True)
+    if last_gate_model is not None:
+        _jl.dump(last_gate_model, proc / "exp_regime_v2_gate.joblib")
+    for r, m in last_dir_models.items():
+        _jl.dump(m, proc / f"exp_regime_v2_dir_r{r}.joblib")
+    if last_gate_model is not None:
+        print(f"  Models saved to data/processed/exp_regime_v2_*.joblib")
     return results
+
+
+def _save_predictions(
+    all_y_true: list[np.ndarray],
+    all_y_pred: list[np.ndarray],
+    name: str,
+) -> None:
+    """Save concatenated gated-bar predictions to data/processed/."""
+    if not all_y_true:
+        return
+    out = Path("data/processed") / f"exp_{name}_predictions.npz"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(out,
+             y_true=np.concatenate(all_y_true),
+             y_pred=np.concatenate(all_y_pred))
+    print(f"  Predictions saved to {out}")
 
 
 # ---------------------------------------------------------------------------

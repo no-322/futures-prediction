@@ -116,8 +116,13 @@ def run(
     X = features.values
     y = three_class_labels(raw_align).values
 
+    tag = "v2" if build_features_fn is not None else "v1"
+
     tss = TimeSeriesSplit(n_splits=n_splits)
     results: list[dict[str, Any]] = []
+    all_y_true: list[np.ndarray] = []
+    all_y_pred: list[np.ndarray] = []
+    last_model = None
 
     for fold_i, (train_idx, test_idx) in enumerate(tss.split(X)):
         X_train, X_test = X[train_idx], X[test_idx]
@@ -132,6 +137,10 @@ def run(
         model = _build_rf(best_params)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
+        last_model = model
+
+        all_y_true.append(y_test)
+        all_y_pred.append(y_pred)
 
         results.append({
             "fold":               fold_i,
@@ -151,7 +160,35 @@ def run(
               f"mcc={results[-1]['mcc']:.4f}  "
               f"macro_f1={results[-1]['macro_f1']:.4f}")
 
+    # Persist predictions and last-fold model
+    _save_predictions(all_y_true, all_y_pred, f"three_class_{tag}")
+    if last_model is not None:
+        import joblib as _jl
+        model_path = Path(f"data/processed/exp_three_class_{tag}_model.joblib")
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        _jl.dump(last_model, model_path)
+        print(f"  Model saved to {model_path}")
     return results
+
+
+def _save_predictions(
+    all_y_true: list[np.ndarray],
+    all_y_pred: list[np.ndarray],
+    name: str,
+) -> None:
+    """Save concatenated cross-fold predictions to data/processed/.
+
+    Args:
+        all_y_true: List of per-fold ground-truth arrays.
+        all_y_pred: List of per-fold prediction arrays.
+        name: Experiment name used to form the filename.
+    """
+    out = Path("data/processed") / f"exp_{name}_predictions.npz"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(out,
+             y_true=np.concatenate(all_y_true),
+             y_pred=np.concatenate(all_y_pred))
+    print(f"  Predictions saved to {out}")
 
 
 def summarise(results: list[dict[str, Any]], label: str = "") -> str:

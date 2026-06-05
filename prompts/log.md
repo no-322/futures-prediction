@@ -477,3 +477,33 @@ Commit all changes
 ## 2026-06-05 12:32:01
 
 Let us build on thw two stage v2 model. Maybe direction is unpredictable on average but we can fit 2 regimes and then train on direction within regime
+
+---
+## 2026-06-05 16:21:25
+
+Get the top 10 features used in random forest out of the 49
+
+---
+## 2026-06-05 16:27:25
+
+Lets write the statistics module next. The module results must be standardized and should have accuracy, along with class-wise metrics
+
+---
+## 2026-06-05 16:36:38
+
+Ensure this is logged in claude.md for the future. Anytime I run any process, we need ti save outputs so that any statstics we need can be calculated. Never forget this
+
+---
+## 2026-06-05 16:38:59
+
+I need to find all the stats for all the experiments we ran. But each run is taking 2-3 hrs. Use any metadata available to run all the experiments as fast as possible without much searching and store the joblib files
+
+---
+## 2026-06-05 19:53:25
+
+you seriously need to reconsider your time estimates. You said 75 mins approx and its been near 2.5 hrs
+
+---
+## 2026-06-05 19:53:52
+
+you seriously need to reconsider your time estimates. You said 75 mins approx and its been near 2.5 hrs

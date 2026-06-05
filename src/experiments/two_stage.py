@@ -169,8 +169,14 @@ def run(
     move  = move_series(raw_align).values
     y_dir = direction_labels(raw_align).values
 
+    tag = "v2" if build_features_fn is not None else "v1"
+
     tss = TimeSeriesSplit(n_splits=n_splits)
     results: list[dict[str, Any]] = []
+    all_y_true: list[np.ndarray] = []
+    all_y_pred: list[np.ndarray] = []
+    last_gate_model = None
+    last_dir_model  = None
 
     for fold_i, (train_idx, test_idx) in enumerate(tss.split(X)):
         X_train, X_test   = X[train_idx],   X[test_idx]
@@ -214,6 +220,7 @@ def run(
         gate_model = _build_rf(gate_hp)
         gate_model.fit(X_train, gate_labels_full)
         gate_pred_test = gate_model.predict(X_test)
+        last_gate_model = gate_model
 
         # --- Stage 2: direction ----------------------------------------------
         tradeable_mask_train = np.abs(mv_train) > threshold
@@ -225,6 +232,7 @@ def run(
                 X_train[tradeable_mask_train],
                 dir_train[tradeable_mask_train],
             )
+            last_dir_model = dir_model
             gated_test_mask = gate_pred_test == 1
             dir_pred_gated = (
                 dir_model.predict(X_test[gated_test_mask])
@@ -258,6 +266,11 @@ def run(
         }
         results.append(fold_result)
 
+        # Accumulate gated predictions for post-hoc statistics
+        if gated_test_mask.sum() > 0 and len(dir_pred_gated) > 0:
+            all_y_true.append(dir_test[gated_test_mask])
+            all_y_pred.append(dir_pred_gated)
+
         print(
             f"  Fold {fold_i}: threshold={threshold:.4f}  "
             f"coverage={fold_result['coverage']:.3f}  "
@@ -266,7 +279,33 @@ def run(
             f"dir_mcc={fold_result['direction_mcc_debug']:.4f}"
         )
 
+    _save_predictions(all_y_true, all_y_pred, f"two_stage_{tag}")
+    import joblib as _jl
+    proc = Path("data/processed")
+    proc.mkdir(parents=True, exist_ok=True)
+    if last_gate_model is not None:
+        _jl.dump(last_gate_model, proc / f"exp_two_stage_{tag}_gate.joblib")
+        print(f"  Gate model saved to data/processed/exp_two_stage_{tag}_gate.joblib")
+    if last_dir_model is not None:
+        _jl.dump(last_dir_model, proc / f"exp_two_stage_{tag}_dir.joblib")
+        print(f"  Dir model saved to data/processed/exp_two_stage_{tag}_dir.joblib")
     return results
+
+
+def _save_predictions(
+    all_y_true: list[np.ndarray],
+    all_y_pred: list[np.ndarray],
+    name: str,
+) -> None:
+    """Save concatenated gated-bar predictions to data/processed/."""
+    if not all_y_true:
+        return
+    out = Path("data/processed") / f"exp_{name}_predictions.npz"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(out,
+             y_true=np.concatenate(all_y_true),
+             y_pred=np.concatenate(all_y_pred))
+    print(f"  Predictions saved to {out}")
 
 
 def summarise(results: list[dict[str, Any]], label: str = "") -> str:
