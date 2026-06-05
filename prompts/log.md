@@ -472,3 +472,8 @@ Let us now add VWAP deviation, RSI, rolling volatility- 1 min, 5min and 15 min h
 ## 2026-06-05 02:37:14
 
 Commit all changes
+
+---
+## 2026-06-05 12:32:01
+
+Let us build on thw two stage v2 model. Maybe direction is unpredictable on average but we can fit 2 regimes and then train on direction within regime
