@@ -78,6 +78,7 @@ Predict whether a futures contract's price goes up or down in the next minute, u
 4. **Split is time-ordered, not shuffled.** First 50% of rows by timestamp = training; second 50% = test.
 5. **Every `src/` module has a matching `tests/test_*.py`.**
 6. **One pseudo-code line = one function = one entry in `docs/MODULES.md`.** Each function has type hints and a docstring with Args/Returns.
+7. **Always persist predictions.** Any pipeline, experiment, or training run that produces predictions (`y_true`, `y_pred`) MUST save them to disk before returning — as a `.npz` file in `data/processed/` or equivalent. Never discard predictions in memory only. Statistics, diagnostics, and reproducibility checks depend on being able to reload predictions without retraining.
 
 ## Feature specification
 For each target minute `t`, build a 20-dim vector from minutes `t-4, t-3, t-2, t-1`. For each of those four minutes, extract:
@@ -131,3 +132,4 @@ Every prompt I submit is auto-appended to `prompts/log.md` by a UserPromptSubmit
 - Modify `data/raw/`.
 - Delete or rewrite `prompts/log.md`.
 - Silently drop NaN rows — log the count.
+- Discard `y_true` / `y_pred` arrays at the end of a training or evaluation run without saving them to `data/processed/`.

@@ -2,6 +2,15 @@
 
 One entry per function per the project convention: one pseudo-code line = one function = one entry here.
 
+## src.statistics
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `compute` | `(y_true, y_pred, name="", labels=None) -> StatsResult` | Compute full evaluation statistics. Works for binary and multi-class. Returns a `StatsResult` TypedDict with accuracy, macro/weighted F1, MCC, per-class precision/recall/F1/support, and confusion matrix. |
+| `format_markdown` | `(result: StatsResult) -> str` | Format a `StatsResult` as a markdown section with scalar metrics table, per-class table, and confusion matrix. |
+| `write_results` | `(results: list[StatsResult], path: Path) -> None` | Write a list of `StatsResult` reports to a markdown file; creates parent dirs. |
+| `to_dict` | `(result: StatsResult) -> dict` | Return a JSON-serialisable plain dict from a `StatsResult`. |
+
 ## src.load
 
 | Function | Signature | Description |
