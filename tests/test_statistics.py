@@ -181,3 +181,82 @@ def test_write_results_creates_file(binary_result: StatsResult,
     assert out.exists()
     content = out.read_text()
     assert "Binary test" in content
+
+
+# ---------------------------------------------------------------------------
+# Backtest
+# ---------------------------------------------------------------------------
+
+from src.statistics import (  # noqa: E402
+    annualized_sharpe,
+    backtest,
+    max_drawdown,
+    _positions_from_signals,
+)
+
+
+def test_positions_from_signals_binary() -> None:
+    pos = _positions_from_signals(np.array([1, 0, 1, 0]), "binary")
+    assert pos.tolist() == [1.0, -1.0, 1.0, -1.0]
+
+
+def test_positions_from_signals_three_class() -> None:
+    pos = _positions_from_signals(np.array([0, 1, 2]), "three_class")
+    assert pos.tolist() == [0.0, 1.0, -1.0]   # HOLD, LONG, SHORT
+
+
+def test_backtest_compounds_and_signs() -> None:
+    # long, short, long against +10%, +10%, -10% bars (cost 0).
+    r = backtest(np.array([1, 0, 1]), np.array([0.1, 0.1, -0.1]),
+                 transaction_cost=0.0, name="t")
+    assert np.allclose(r["equity"], [1100.0, 990.0, 891.0])
+    assert np.allclose(r["payoff"], [100.0, -110.0, -99.0])   # prev_equity * net
+    assert r["final_equity"] == pytest.approx(891.0)
+    assert r["total_return"] == pytest.approx(-0.109)
+    assert r["max_drawdown"] == pytest.approx(0.19)           # 1100 -> 891
+    assert r["n_periods"] == 3
+
+
+def test_backtest_passive_benchmark() -> None:
+    bar = np.array([0.1, -0.05, 0.2])
+    r = backtest(np.array([1, 0, 1]), bar, transaction_cost=0.0)
+    # Passive = always-long, frictionless = initial * cumprod(1 + bar).
+    assert np.allclose(r["passive_equity"], 1000.0 * np.cumprod(1.0 + bar))
+    assert r["passive_final_equity"] == pytest.approx(1000.0 * np.prod(1.0 + bar))
+    assert r["passive_total_return"] == pytest.approx(np.prod(1.0 + bar) - 1.0)
+
+
+def test_backtest_always_long_matches_passive() -> None:
+    bar = np.array([0.1, -0.05, 0.2, -0.1])
+    r = backtest(np.ones(4, dtype=int), bar, transaction_cost=0.0)
+    # An all-long, cost-free strategy is exactly the passive benchmark.
+    assert np.allclose(r["equity"], r["passive_equity"])
+    assert r["final_equity"] == pytest.approx(r["passive_final_equity"])
+
+
+def test_backtest_transaction_cost_reduces_net() -> None:
+    # Flat market, always long: net return == -cost each bar.
+    free = backtest(np.array([1, 1]), np.array([0.0, 0.0]), transaction_cost=0.0)
+    paid = backtest(np.array([1, 1]), np.array([0.0, 0.0]), transaction_cost=0.01)
+    assert np.allclose(free["equity"], [1000.0, 1000.0])
+    assert np.allclose(paid["net_return"], [-0.01, -0.01])
+    assert np.allclose(paid["equity"], [990.0, 980.1])
+
+
+def test_backtest_length_mismatch_raises() -> None:
+    with pytest.raises(ValueError):
+        backtest(np.array([1, 0]), np.array([0.1]))
+
+
+def test_max_drawdown_known_series() -> None:
+    # peak 1100 -> trough 880 => 20% drawdown
+    assert max_drawdown(np.array([1000.0, 1100.0, 880.0, 1050.0])) == pytest.approx(0.2)
+    assert max_drawdown(np.array([1000.0, 1100.0, 1200.0])) == 0.0   # monotonic up
+
+
+def test_annualized_sharpe_formula_and_guard() -> None:
+    r = np.array([0.01, -0.01, 0.02])
+    expected = np.sqrt(252) * r.mean() / r.std(ddof=1)
+    assert annualized_sharpe(r, 252) == pytest.approx(expected)
+    assert annualized_sharpe(np.zeros(3), 252) == 0.0            # zero-vol guard
+    assert annualized_sharpe(np.array([0.01]), 252) == 0.0       # too short

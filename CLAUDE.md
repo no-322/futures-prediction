@@ -18,13 +18,21 @@ Predict whether a futures contract's price goes up or down in the next minute, u
 │   ├── load.py              # load + validate raw data
 │   ├── split.py             # 50/50 time-ordered split
 │   ├── features.py          # 20-dim lagged feature vector
-│   ├── labels.py            # up/down labels
+│   ├── features_v2.py       # 49-dim feature matrix (+ cached loader)
+│   ├── labels.py            # up/down labels + direction/move/flat helpers
 │   ├── evaluate.py          # accuracy, confusion matrix, baselines
-│   └── models/{rf,gbm,svm}.py
+│   ├── statistics.py        # standardised metrics + backtest (equity/P&L)
+│   ├── backtest.py          # backtest runner (equity curve vs passive)
+│   ├── run_stats.py         # batch stats orchestrator (binary)
+│   ├── binary_suite.py      # binary trainer (feature-set + flat toggle)
+│   ├── pipeline.py          # end-to-end driver for one production model
+│   └── models/{rf,gbm,svm,baseline,regime_hmm,regime_binary}.py
+├── app.py                   # Streamlit GUI (train / predict / stats & backtest)
 ├── tests/                   # one test file per src module
 ├── prompts/log.md           # auto-logged by hook
 ├── docs/
 │   ├── MODULES.md           # function table for the professor
+│   ├── INTERFACES.md        # per-module data contracts (swap any stage)
 │   └── notes/               # ESL reading notes
 └── pyproject.toml
 ```

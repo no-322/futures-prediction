@@ -46,13 +46,29 @@ and verified by [tests/test_no_leakage.py](tests/test_no_leakage.py).
 ## Results
 
 
+### Statistics, backtest & GUI
+Standardised metrics live in `src/statistics.py` (`compute` → accuracy/MCC/
+per-class) and a compounding **long/short backtest** (`backtest` → equity curve,
+max drawdown, annualised Sharpe) with a **passive buy-&-hold** benchmark on every
+graph. `src/run_stats.py` batches the binary reports; `src/backtest.py` is the
+CLI runner. The Streamlit GUI (`app.py`) has a **Statistics & Backtest** tab that
+generates the report and the equity-curve graph for any saved model.
+
+### Modular interfaces
+Every pipeline stage has a documented input/output contract so any module can be
+swapped with an independent implementation — see **[docs/INTERFACES.md](docs/INTERFACES.md)**
+(data formats, call sequence, artifact schemas) and the function table in
+[docs/MODULES.md](docs/MODULES.md).
+
 ## Reproducing
 ```bash
 git clone ...
 pip install -e .
-pytest                    # all tests pass
-python -m src.models.rf   # train RF
-python -m src.evaluate    # full comparison
+pytest                         # all tests pass
+python -m src.pipeline --algo all   # train the 4 production models
+python -m src.run_stats             # standardised stats reports → docs/notes/
+python -m src.backtest --algo all   # equity-curve graphs (strategy vs passive)
+streamlit run app.py                # GUI: train / predict / statistics & backtest
 ```
 
 ## Repo structure

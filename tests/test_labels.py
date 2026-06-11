@@ -1,10 +1,11 @@
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from src.features import build_features
-from src.labels import build_labels
+from src.labels import build_labels, direction_labels, flat_mask, move_series
 from src.load import load_raw
 from src.split import split
 
@@ -54,3 +55,25 @@ def test_label_correctness(pipeline: tuple) -> None:
 def test_alignment_with_features(pipeline: tuple) -> None:
     X_train, _, labels = pipeline
     assert len(X_train) == len(labels)
+
+
+# --- binary label helpers (move_series / flat_mask / direction_labels) ------
+
+def test_flat_mask_marks_close_equals_open() -> None:
+    raw = pd.DataFrame({
+        "Open":  [100.0, 100.0, 101.0, 99.0],
+        "Close": [100.5, 100.0, 101.0, 99.5],
+    })
+    mask = flat_mask(raw)
+    assert mask.dtype == bool
+    assert list(mask) == [False, True, True, False]
+
+
+def test_direction_labels_equals_build_labels() -> None:
+    raw = pd.DataFrame({"Open": [100.0, 100.0, 101.0], "Close": [100.5, 99.0, 101.0]})
+    assert list(direction_labels(raw)) == list(build_labels(raw)) == [1, 0, 0]
+
+
+def test_move_series_signed_move() -> None:
+    raw = pd.DataFrame({"Open": [100.0, 100.0], "Close": [100.5, 99.0]})
+    assert np.allclose(move_series(raw).to_numpy(), [0.5, -1.0])

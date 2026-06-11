@@ -300,7 +300,9 @@ st.markdown("---")
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_train, tab_predict = st.tabs(["Training", "Prediction"])
+tab_train, tab_predict, tab_stats = st.tabs(
+    ["Training", "Prediction", "Statistics & Backtest"]
+)
 
 # ===========================================================================
 # TRAINING TAB
@@ -581,3 +583,101 @@ with tab_predict:
 
     st.markdown("---")
     _render_last_run_info(pred_algo or "rf")
+
+# ===========================================================================
+# STATISTICS & BACKTEST TAB
+# ===========================================================================
+
+with tab_stats:
+    st.subheader("Statistics & Backtest")
+    st.markdown(
+        "Pick a model with saved predictions, then compute its standardised "
+        "classification statistics and run a compounding long/short backtest "
+        "(start $1,000, reinvest each bar). The equity curve is plotted against "
+        "a **passive buy-&-hold** benchmark."
+    )
+
+    import src.backtest as _backtest          # noqa: E402
+    import src.statistics as _stats           # noqa: E402
+
+    _registry = _backtest._build_registry()
+    _available = {
+        k: v for k, v in _registry.items()
+        if (Path(f"data/processed/{k}_predictions.npz")).exists()
+    }
+
+    if not _available:
+        st.info(
+            "No saved predictions found in `data/processed/`. Train a model "
+            "(Training tab) or run `python -m src.run_stats` first."
+        )
+    else:
+        _label_to_key = {f"{v}  [{k}]": k for k, v in _available.items()}
+        _choice = st.selectbox("Model", list(_label_to_key))
+        _algo   = _label_to_key[_choice]
+        _cost   = st.number_input(
+            "Transaction cost per bar (proportional; 0 = frictionless, 0.0001 = 1 bp)",
+            min_value=0.0, value=0.0, step=0.0001, format="%.4f",
+        )
+
+        if st.button("Compute statistics + backtest", type="primary"):
+            try:
+                d = np.load(f"data/processed/{_algo}_predictions.npz")
+
+                # --- classification statistics ----------------------------
+                res = _stats.compute(d["y_true"], d["y_pred"], name=_registry[_algo])
+                st.markdown("### Classification statistics")
+                m = st.columns(4)
+                m[0].metric("Accuracy", f"{res['accuracy']:.4f}")
+                m[1].metric("Macro F1", f"{res['macro_f1']:.4f}")
+                m[2].metric("MCC", f"{res['mcc']:.4f}")
+                m[3].metric("Samples", f"{res['n_samples']:,}")
+                st.markdown(_stats.format_markdown(res))
+
+                # --- backtest --------------------------------------------
+                ts, bar = _backtest._reconstruct_test_bars(cfg)
+                if len(d["y_pred"]) != len(bar):
+                    st.warning(
+                        f"Predictions length ({len(d['y_pred']):,}) ≠ test bars "
+                        f"({len(bar):,}); backtest skipped — only contiguous 50/50 "
+                        "binary models are supported."
+                    )
+                else:
+                    bt = _backtest.run_one(_algo, float(_cost), ts, bar)
+                    st.markdown("### Backtest")
+                    b = st.columns(4)
+                    b[0].metric("Final equity", f"${bt['final_equity']:,.2f}")
+                    b[1].metric("Total return", f"{bt['total_return']:.2%}")
+                    b[2].metric("Max drawdown", f"{bt['max_drawdown']:.2%}")
+                    b[3].metric("Ann. Sharpe", f"{bt['annualized_sharpe']:.2f}")
+                    b2 = st.columns(2)
+                    b2[0].metric("Passive final equity",
+                                 f"${bt['passive_final_equity']:,.2f}")
+                    b2[1].metric("Strategy − Passive (return)",
+                                 f"{(bt['total_return'] - bt['passive_total_return']):+.2%}")
+                    st.image(
+                        bt["plot_path"],
+                        caption="Equity curve — strategy vs passive buy & hold",
+                    )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Statistics/backtest failed: {exc}")
+
+    # --- generated reports on disk ----------------------------------------
+    with st.expander("View generated reports"):
+        _reports = {
+            "Production models": Path("docs/notes/all_stats.md"),
+            "No-flat suite (20-feat) + HMM": Path("docs/notes/binary_noflat_stats.md"),
+            "49-feature suites": Path("docs/notes/binary_v2_stats.md"),
+            "Backtest summary": Path("docs/notes/backtest_stats.md"),
+        }
+        _any = False
+        for _name, _path in _reports.items():
+            if _path.exists():
+                _any = True
+                st.markdown(f"**{_name}** — `{_path}`")
+                st.download_button(
+                    f"Download {_path.name}", data=_path.read_text(),
+                    file_name=_path.name, mime="text/markdown", key=f"dl_{_path.name}",
+                )
+        if not _any:
+            st.info("No reports yet — run `python -m src.run_stats`.")
