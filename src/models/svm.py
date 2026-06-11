@@ -47,6 +47,7 @@ def train(
     X: pd.DataFrame,
     y: pd.Series,
     params: dict | None = None,
+    save_path: Path | None = None,
 ) -> SVMModel:
     """Fit a StandardScaler and SVC on the training feature matrix.
 
@@ -60,6 +61,9 @@ def train(
         params: Optional hyperparameter overrides from config.model_params().
             Supported keys match SVC kwargs. random_state is always 42
             regardless of params.
+        save_path: Where to persist the fitted model. Defaults to the canonical
+            data/processed/svm_model.joblib; pass an alternate path to avoid
+            overwriting the production artifact (e.g. the no-flat experiment).
 
     Returns:
         SVMModel with keys 'scaler' (fitted StandardScaler) and 'clf' (fitted SVC).
@@ -81,7 +85,7 @@ def train(
     clf = SVC(**p)
     clf.fit(X_scaled, y)
     model = SVMModel(scaler=scaler, clf=clf)
-    save(model)
+    save(model, save_path or _DEFAULT_PATH)
     return model
 
 

@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 
@@ -15,6 +16,50 @@ def build_labels(df: pd.DataFrame) -> pd.Series:
         index. 1 means Close > Open for that row; 0 otherwise.
     """
     return (df["Close"] > df["Open"]).astype(int).reset_index(drop=True)
+
+
+# `direction_labels` is an alias of `build_labels` kept for the regime/binary
+# suites, which refer to the up/down target as the "direction" label.
+def direction_labels(raw_align: pd.DataFrame) -> pd.Series:
+    """Binary direction label: 1 if Close > Open, else 0 (== build_labels).
+
+    Args:
+        raw_align: Raw DataFrame aligned to the feature matrix (df.iloc[4:]).
+
+    Returns:
+        Int Series of {0, 1}, reset 0-based index.
+    """
+    return build_labels(raw_align)
+
+
+def move_series(raw_align: pd.DataFrame) -> pd.Series:
+    """Signed intrabar move (Close − Open) for each bar.
+
+    Args:
+        raw_align: Raw DataFrame aligned to the feature matrix (df.iloc[4:]).
+
+    Returns:
+        Float Series of Close − Open, reset 0-based index.
+    """
+    return (raw_align["Close"] - raw_align["Open"]).reset_index(drop=True)
+
+
+def flat_mask(raw_align: pd.DataFrame) -> np.ndarray:
+    """Boolean mask marking flat bars (Close == Open).
+
+    Used to drop ambiguous flat rows from the *training* split when focusing on
+    pure binary up/down classification. Computed after features are built, so
+    removing flagged rows never alters another row's feature vector (no
+    look-ahead). Never apply to the test split — the test set stays whole.
+
+    Args:
+        raw_align: Raw DataFrame aligned to the feature matrix (df.iloc[4:]),
+            or its train slice.
+
+    Returns:
+        Boolean ndarray, True where Close == Open, same length as raw_align.
+    """
+    return (raw_align["Close"].values == raw_align["Open"].values)
 
 
 if __name__ == "__main__":
