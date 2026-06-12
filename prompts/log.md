@@ -447,3 +447,38 @@ The code for src.load is wrong. It is not referencing the file correctly. Gives 
 ## 2026-06-04 19:41:40
 
 stage and commit all changes. Do not touch changes to notebook.md
+
+---
+## 2026-06-12 17:49:13
+
+run the app
+
+---
+## 2026-06-12 18:04:09
+
+I was testing the app and I noticed significant issues. 1. Neither training nor test screen has the new models ie the version 2 models and HMM based model. 2. Why do we need a seperate statistics & backtest page when we have a "View Statistics Report" section in prediction page?
+
+---
+## 2026-06-12 19:17:32
+
+I just ran predict svm v2 in the GUI for around 250k rows. Its been running for 45+ mins
+
+---
+## 2026-06-12 19:24:32
+
+I am okay with option 2 that you suggested for behavior but there is a current prediction running and I dont want to hinder it in any way. So wait till it is over and then proceed
+
+---
+## 2026-06-12 19:33:46
+
+go ahead with the changes
+
+---
+## 2026-06-12 19:42:48
+
+are the other models suffering from similar problem and be needing regularization?
+
+---
+## 2026-06-12 19:46:01
+
+commit all changes. We will retrain later

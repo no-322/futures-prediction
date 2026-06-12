@@ -62,9 +62,28 @@ def test_run_persists_binary_predictions_with_regime_and_move(monkeypatch, tmp_p
     # Artifacts written under the patched processed dir.
     assert (tmp_path / "exp_regime_binary_hmm.joblib").exists()
     assert (tmp_path / "exp_regime_binary_scaler.joblib").exists()
+    assert (tmp_path / "exp_regime_binary_remap.joblib").exists()
     assert (tmp_path / "exp_regime_binary_dir_r0.joblib").exists()
     assert (tmp_path / "exp_regime_binary_dir_r1.joblib").exists()
     assert summary["n_test"] == n
+
+
+def test_load_bundle_and_predict_roundtrip(monkeypatch, tmp_path) -> None:
+    df, fr = _synthetic()
+    monkeypatch.setattr(rb, "load_raw", lambda _p: df)
+    monkeypatch.setattr(rb, "build_features_v2", lambda _d: fr)
+    monkeypatch.setattr(rb, "_PROC", tmp_path)
+    monkeypatch.setattr(rb, "_NPZ", tmp_path / "exp_regime_binary_predictions.npz")
+    cfg = {"data": {"path": "x", "train_size": 0.5},
+           "models": {"rf": {"n_estimators": 20}}}
+    rb.run(config=cfg)
+
+    bundle = rb.load_bundle(tmp_path)
+    assert set(bundle) == {"hmm", "scaler", "remap", "dir_models"}
+
+    preds = rb.predict(fr, bundle)                 # predict on the full feature frame
+    assert len(preds) == len(fr)
+    assert set(np.unique(preds).tolist()) <= {0, 1}
 
 
 def test_save_importance_writes_ranked_csv(tmp_path) -> None:
