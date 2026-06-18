@@ -55,7 +55,7 @@ Selection + I/O glue for backtesting saved binary models (math lives in `src.sta
 | `build_labels` | `(df: pd.DataFrame) -> pd.Series` | Compute binary label per row: 1 if `Close > Open`, else 0. No rows dropped — caller passes the aligned training slice (`df.iloc[4:]` of the raw data). Returns `int` Series with reset index. |
 | `direction_labels` | `(raw_align: pd.DataFrame) -> pd.Series` | Alias of `build_labels` (the up/down "direction" target) used by the binary/regime suites. |
 | `move_series` | `(raw_align: pd.DataFrame) -> pd.Series` | Signed intrabar move `Close − Open` per bar (float Series, reset index). |
-| `flat_mask` | `(raw_align: pd.DataFrame) -> np.ndarray` | Boolean mask, True where `Close == Open` (flat bar). Used to drop flat rows from the **training** split only; computed after features are built so it never alters other rows' features. Never apply to the test split. |
+| `flat_mask` | `(raw_align: pd.DataFrame) -> np.ndarray` | Boolean mask, True where `Close == Open` (flat bar). Used to drop flat rows from the **training** split only; computed after features are built so it never alters other rows' features. Never apply to the test split for training; applying it as an evaluation/reporting slice (the "no-flat test" stats) is fine. |
 
 ## src.models.baseline
 
@@ -166,3 +166,5 @@ Binary HMM-regime direction model (Experiment 5): a Gaussian HMM detects 2 regim
 |----------|-----------|-------------|
 | `section_c` | `(cfg: dict, skip_existing: bool = False) -> None` | Additively train the no-flat binary suite (20-feat) + HMM model and write `docs/notes/binary_noflat_stats.md` with per-label confusion-matrix metrics plus a per-regime breakdown for the HMM model. Never touches production artifacts or `all_stats.md`. |
 | `section_d` | `(cfg: dict, skip_existing: bool = False) -> None` | Additively train the two 49-feature binary variants (flat-included `exp_v2_*`, no-flat `exp_noflat_v2_*`) and write `docs/notes/binary_v2_stats.md` with per-label confusion-matrix metrics. Uses the cached v2 feature matrix; never touches the 20-feature artifacts or other reports. |
+| `test_flat_mask` | `(cfg: dict) -> np.ndarray` | Reconstruct the 50/50 test slice (`df.iloc[4:]` → split) and return the boolean "keep" mask (`True` where `Close != Open`), aligned 1-to-1 with every binary model's saved test predictions. |
+| `section_noflat_test` | `(cfg: dict) -> None` | No-flat-test evaluation slice: read every existing `{stem}_predictions.npz` (no retraining), drop flat (`Open == Close`) test rows via `test_flat_mask`, recompute stats, and write three sibling reports (`all_stats_noflat_test.md`, `binary_noflat_stats_noflat_test.md`, `binary_v2_stats_noflat_test.md`). Length-mismatched sets (3-class / two-stage) are skipped. |

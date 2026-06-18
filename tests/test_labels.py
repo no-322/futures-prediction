@@ -77,3 +77,12 @@ def test_direction_labels_equals_build_labels() -> None:
 def test_move_series_signed_move() -> None:
     raw = pd.DataFrame({"Open": [100.0, 100.0], "Close": [100.5, 99.0]})
     assert np.allclose(move_series(raw).to_numpy(), [0.5, -1.0])
+
+
+def test_flat_mask_equiv_move_zero() -> None:
+    # flat ⇔ move == 0 — the no-flat-test slice relies on this equivalence.
+    raw = pd.DataFrame({
+        "Open":  [100.0, 100.0, 101.0, 99.0],
+        "Close": [100.5, 100.0, 101.0, 99.5],
+    })
+    assert list(flat_mask(raw)) == list(move_series(raw).to_numpy() == 0)

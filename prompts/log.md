@@ -482,3 +482,49 @@ are the other models suffering from similar problem and be needing regularizatio
 ## 2026-06-12 19:46:01
 
 commit all changes. We will retrain later
+
+---
+## 2026-06-12 20:12:30
+
+In my last run with the GUI I got this message "Loaded 251,523 rows from data/processed/_upload_pred.csv
+features_v2: 49 features, 251,519 rows  (dropped 4 warm-up rows, filled 54 NaN cells)" Although I am almost certain there are no Nans. I used rows 300k onwards from the dataset. Verify this and also tell me the logic we use for fill Nans
+
+---
+## 2026-06-12 20:33:46
+
+push changes
+
+---
+## 2026-06-12 21:49:52
+
+Remind me again the degree of overtraining in various models
+
+---
+## 2026-06-12 21:53:14
+
+Check in the context files. You calculated and told me this 2 messages back
+
+---
+## 2026-06-12 23:05:56
+
+Did you remove display of summary statistics for previous model when we load model in GUI?
+
+---
+## 2026-06-12 23:12:52
+
+How is it for gradient boost metrics for no-flat v2 are worse than v2 but backtest no-flat earns more?
+
+---
+## 2026-06-13 00:24:24
+
+are the npz files saving the parameters as well?
+
+---
+## 2026-06-18 00:03:52
+
+We need to build a version 2 test where the test set data doesn't have rows where open == close. Next step is to build all stats for this version of the test set as well
+
+---
+## 2026-06-18 08:37:14
+
+commit this

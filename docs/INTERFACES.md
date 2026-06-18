@@ -30,7 +30,7 @@ src/
   pipeline.py      # end-to-end driver for one production model
   statistics.py    # compute (classification metrics) + backtest (equity/P&L)
   backtest.py      # selection/I-O runner around statistics.backtest
-  run_stats.py     # batch stats orchestrator (Sections A/C/D)
+  run_stats.py     # batch stats orchestrator (Sections A/C/D + nft no-flat-test)
   feature_importance.py
   evaluate.py      # legacy accuracy/recall/confusion helpers
 app.py             # Streamlit GUI (train / predict / statistics+backtest)
@@ -135,10 +135,17 @@ slice. Validates timestamp monotonicity when a `Date and Time` column is present
 |---|---|---|
 | `build_labels(raw)` / `direction_labels(raw)` | int Series `{0,1}` | `1` if `Close > Open` else `0` |
 | `move_series(raw)` | float Series | `Close − Open` (signed intrabar move) |
-| `flat_mask(raw)` | bool ndarray | `True` where `Close == Open` (drop from **training only**) |
+| `flat_mask(raw)` | bool ndarray | `True` where `Close == Open` (drop from **training only**, or use as a test-set *evaluation* slice — see below) |
 
 Input is the row-aligned raw slice (`df.iloc[4:]` or its train/test split). Length
 and order match the feature matrix.
+
+**No-flat test slice.** `run_stats.test_flat_mask(cfg)` returns the test-set keep
+mask (`~flat_mask(raw_test)`), and `run_stats.section_noflat_test(cfg)` recomputes
+stats for every saved prediction set on that slice → `*_noflat_test.md` reports.
+This drops flat bars from the **metrics only** (predictions were already made on
+the whole test set, blind to flatness); it is not a refit and does not violate
+the "test set is sacred" rule. Equivalently, `flat ⇔ move == 0 ⇔ bar_return == 0`.
 
 ### 3.5 Models — `src/models/<algo>.py` (baseline, rf, gbm, svm)
 Uniform interface:

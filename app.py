@@ -693,7 +693,23 @@ with tab_predict:
         st.success(f"Prediction complete — {pr['display']} on {pr['file']}.")
 
         st.markdown("### Statistics")
-        _show_eval(pr["y_true"], pr["preds"])
+        has_truth = pr["y_true"] is not None
+        nft = st.checkbox(
+            "Evaluate on no-flat test set (drop Open==Close bars)",
+            value=False, key="nft_eval", disabled=not has_truth,
+            help="Exclude test bars where Open == Close from the metrics. "
+                 "Predictions are unchanged — flat bars are just dropped from "
+                 "evaluation (they are ambiguous, neither up nor down).",
+        )
+        if nft and has_truth:
+            keep = np.asarray(pr["bar_returns"]) != 0  # flat ⇔ bar_return == 0
+            n_drop = int((~keep).sum())
+            st.caption(f"No-flat test slice: kept {int(keep.sum()):,} of "
+                       f"{keep.size:,} bars ({n_drop:,} flat dropped, "
+                       f"{100 * n_drop / keep.size:.2f}%).")
+            _show_eval(np.asarray(pr["y_true"])[keep], np.asarray(pr["preds"])[keep])
+        else:
+            _show_eval(pr["y_true"], pr["preds"])
 
         st.markdown("### Backtest — $1,000, reinvested each bar")
         bt = _stats.backtest(
