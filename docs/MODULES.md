@@ -55,13 +55,13 @@ Selection + I/O glue for backtesting saved binary models (math lives in `src.sta
 | `build_labels` | `(df: pd.DataFrame) -> pd.Series` | Compute binary label per row: 1 if `Close > Open`, else 0. No rows dropped — caller passes the aligned training slice (`df.iloc[4:]` of the raw data). Returns `int` Series with reset index. |
 | `direction_labels` | `(raw_align: pd.DataFrame) -> pd.Series` | Alias of `build_labels` (the up/down "direction" target) used by the binary/regime suites. |
 | `move_series` | `(raw_align: pd.DataFrame) -> pd.Series` | Signed intrabar move `Close − Open` per bar (float Series, reset index). |
-| `flat_mask` | `(raw_align: pd.DataFrame) -> np.ndarray` | Boolean mask, True where `Close == Open` (flat bar). Used to drop flat rows from the **training** split only; computed after features are built so it never alters other rows' features. Never apply to the test split. |
+| `flat_mask` | `(raw_align: pd.DataFrame) -> np.ndarray` | Boolean mask, True where `Close == Open` (flat bar). Used to drop flat rows from the **training** split only; computed after features are built so it never alters other rows' features. Never apply to the test split for training; applying it as an evaluation/reporting slice (the "no-flat test" stats) is fine. |
 
 ## src.models.baseline
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None, save_path: Path \| None = None) -> LogisticRegression` | Fit logistic regression; defaults `max_iter=1000`, `random_state=42` (always enforced). `params` dict from `config.model_params()` overrides defaults. Saves to `save_path` if given, else `data/processed/baseline_model.joblib`. |
+| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None, save_path: Path \| None = None, sample_weight: np.ndarray \| None = None) -> LogisticRegression` | Fit logistic regression; defaults `max_iter=1000`, `random_state=42` (always enforced). `params` dict from `config.model_params()` overrides defaults. `sample_weight` optionally weights rows (e.g. \|Close−Open\|). Saves to `save_path` if given, else `data/processed/baseline_model.joblib`. |
 | `predict` | `(model: LogisticRegression, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted logistic regression. |
 | `predict_always_up` | `(n: int) -> np.ndarray` | Baseline: return an array of `n` ones (always predict up). |
 | `predict_last_direction` | `(y_train: pd.Series, y_test: pd.Series) -> np.ndarray` | Baseline: for each test row, predict the direction of the previous bar; first row uses last training label. |
@@ -72,7 +72,7 @@ Selection + I/O glue for backtesting saved binary models (math lives in `src.sta
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None, save_path: Path \| None = None) -> RandomForestClassifier` | Fit Random Forest; defaults: 500 trees, `sqrt` features, `min_samples_leaf=5`, `class_weight="balanced"`, `oob_score=True`, `random_state=42` (always enforced). `params` overrides defaults. Saves to `save_path` if given, else `data/processed/rf_model.joblib`. |
+| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None, save_path: Path \| None = None, sample_weight: np.ndarray \| None = None) -> RandomForestClassifier` | Fit Random Forest; defaults: 500 trees, `sqrt` features, `min_samples_leaf=5`, `class_weight="balanced"`, `oob_score=True`, `random_state=42` (always enforced). `params` overrides defaults. `sample_weight` optionally weights rows. Saves to `save_path` if given, else `data/processed/rf_model.joblib`. |
 | `predict` | `(model: RandomForestClassifier, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted Random Forest. |
 | `save` | `(model: RandomForestClassifier, path: Path = "data/processed/rf_model.joblib") -> None` | Serialize fitted model to disk with joblib; `oob_score_` is preserved. Creates parent dirs. |
 | `load` | `(path: Path = "data/processed/rf_model.joblib") -> RandomForestClassifier` | Deserialize and return a RandomForestClassifier saved by `save()`, with `oob_score_` intact. |
@@ -97,7 +97,7 @@ Selection + I/O glue for backtesting saved binary models (math lives in `src.sta
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None, save_path: Path \| None = None) -> XGBClassifier` | Fit XGBClassifier with defaults from docstring; `random_state=42` always enforced. `params` overrides defaults. Saves to `save_path` if given, else `data/processed/gbm_model.joblib`. |
+| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None, save_path: Path \| None = None, sample_weight: np.ndarray \| None = None) -> XGBClassifier` | Fit XGBClassifier with defaults from docstring; `random_state=42` always enforced. `params` overrides defaults. `sample_weight` optionally weights rows. Saves to `save_path` if given, else `data/processed/gbm_model.joblib`. |
 | `predict` | `(model: XGBClassifier, X: pd.DataFrame) -> np.ndarray` | Return class-label predictions (0 or 1) from a fitted XGBClassifier. |
 | `save` | `(model: XGBClassifier, path: Path = "data/processed/gbm_model.joblib") -> None` | Serialize fitted model to disk with joblib; creates parent dirs. |
 | `load` | `(path: Path = "data/processed/gbm_model.joblib") -> XGBClassifier` | Deserialize and return an XGBClassifier saved by `save()`. |
@@ -106,7 +106,7 @@ Selection + I/O glue for backtesting saved binary models (math lives in `src.sta
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None, save_path: Path \| None = None) -> SVMModel` | Fit `StandardScaler` on `X_train` only, then fit `SVC` with defaults from docstring; `random_state=42` always enforced. `params` overrides defaults. Saves to `save_path` if given, else `data/processed/svm_model.joblib`. |
+| `train` | `(X: pd.DataFrame, y: pd.Series, params: dict \| None = None, save_path: Path \| None = None, sample_weight: np.ndarray \| None = None) -> SVMModel` | Fit `StandardScaler` on `X_train` only, then fit `SVC` with defaults from docstring; `random_state=42` always enforced. `params` overrides defaults. `sample_weight` optionally weights rows. Saves to `save_path` if given, else `data/processed/svm_model.joblib`. |
 | `predict` | `(model: SVMModel, X: pd.DataFrame) -> np.ndarray` | Apply the training-fit scaler to `X`, then return class-label predictions (0 or 1) from the fitted SVC. |
 | `save` | `(model: SVMModel, path: Path = "data/processed/svm_model.joblib") -> None` | Serialize the `SVMModel` (scaler + clf) to disk with joblib; creates parent dirs. |
 | `load` | `(path: Path = "data/processed/svm_model.joblib") -> SVMModel` | Deserialize and return an `SVMModel` saved by `save()`. |
@@ -138,6 +138,14 @@ Selection + I/O glue for backtesting saved binary models (math lives in `src.sta
 | `build_features_v2` | `(df: pd.DataFrame) -> pd.DataFrame` | Build the 49-feature v2 matrix (v1 OHLCV lags + derived indicators + target-bar time encodings). |
 | `load_or_build_features_v2` | `(df: pd.DataFrame) -> pd.DataFrame` | Return the v2 matrix from the `data/processed/features_v2.parquet` cache if present, else build and cache it. |
 
+## src.features_v3
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `build_features_v3` | `(df: pd.DataFrame) -> pd.DataFrame` | Build the 48-feature stationary v3 matrix: v2's 20 raw base price lags replaced by `log(value / lag1_Close)` (stationary log-ratios vs the strictly-prior close; the now-constant `lag1_Close` is dropped), all derived/time features unchanged. |
+| `_transform_v3` | `(v2: pd.DataFrame) -> pd.DataFrame` | Pure row-wise transform turning a 49-col v2 matrix into the 48-col v3 matrix (log-ratio of base lags vs `lag1_Close`); fills any inf/NaN edge cells. |
+| `load_or_build_features_v3` | `(df: pd.DataFrame) -> pd.DataFrame` | Return the v3 matrix from `data/processed/features_v3.parquet` if present, else build it from the cached v2 matrix and cache it. |
+
 ## src.binary_suite
 
 Binary classification suite (Experiment 4), configurable by feature set (v1/v2) and flat toggle. Trains the 4 original models and writes per-variant `{prefix}_*` artifacts (`exp_noflat`, `exp_noflat_v2`, `exp_v2`) without overwriting the originals.
@@ -166,3 +174,18 @@ Binary HMM-regime direction model (Experiment 5): a Gaussian HMM detects 2 regim
 |----------|-----------|-------------|
 | `section_c` | `(cfg: dict, skip_existing: bool = False) -> None` | Additively train the no-flat binary suite (20-feat) + HMM model and write `docs/notes/binary_noflat_stats.md` with per-label confusion-matrix metrics plus a per-regime breakdown for the HMM model. Never touches production artifacts or `all_stats.md`. |
 | `section_d` | `(cfg: dict, skip_existing: bool = False) -> None` | Additively train the two 49-feature binary variants (flat-included `exp_v2_*`, no-flat `exp_noflat_v2_*`) and write `docs/notes/binary_v2_stats.md` with per-label confusion-matrix metrics. Uses the cached v2 feature matrix; never touches the 20-feature artifacts or other reports. |
+| `test_flat_mask` | `(cfg: dict) -> np.ndarray` | Reconstruct the 50/50 test slice (`df.iloc[4:]` → split) and return the boolean "keep" mask (`True` where `Close != Open`), aligned 1-to-1 with every binary model's saved test predictions. |
+| `section_noflat_test` | `(cfg: dict) -> None` | No-flat-test evaluation slice: read every existing `{stem}_predictions.npz` (no retraining), drop flat (`Open == Close`) test rows via `test_flat_mask`, recompute stats, and write three sibling reports (`all_stats_noflat_test.md`, `binary_noflat_stats_noflat_test.md`, `binary_v2_stats_noflat_test.md`). Length-mismatched sets (3-class / two-stage) are skipped. |
+
+## src.tuning
+
+Model-selection harness that optimises **no-flat test accuracy** by selecting on a no-flat validation fold carved from the training half (the test set is touched once, at the end).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `build_selection_split` | `(cfg: dict, feat_fn: Callable, val_frac: float = 0.2) -> SelectionSplit` | Carve the inner-train (flat-dropped) + no-flat validation fold from the **training half only** (last `val_frac` of train, time-ordered). No test-half rows are included (no leakage). |
+| `grid_search` | `(algo: str, sel: SelectionSplit, grid: list[dict] \| None = None) -> tuple[dict, float, list]` | Score each curated param combo by no-flat validation accuracy (model fit on inner-train); return best params, best val accuracy, and all (params, acc) results. Subsamples inner-train for the RBF SVM. |
+| `tune_threshold` | `(scores_val: np.ndarray, y_val: np.ndarray) -> float` | Sweep the decision threshold to maximise no-flat validation accuracy; return the best `>=` threshold. |
+| `predict_with_threshold` | `(algo: str, model, X: pd.DataFrame, threshold: float \| None = None) -> np.ndarray` | Predict binary labels; `threshold=None` → plain `_predict`, else `_scores(...) >= threshold` (probability for baseline/rf/gbm, SVM margin for svm). Used by the GUI to apply the stored tuned threshold. |
+| `select_features` | `(sel: SelectionSplit, score_algo: str = "baseline", k_grid: list[int] \| None = None) -> tuple[list[str], list]` | Rank features by L1-logistic coefficient magnitude (train-only scaling), sweep top-k, and return the subset maximising no-flat validation accuracy. |
+| `run_tuning` | `(cfg: dict, algos=…, featset="v2", use_move_weight=False, tune_thr=False, val_frac=0.2, select=False) -> list[dict]` | Per algo: grid-search → (optional) threshold tune → optional feature selection → retrain best on the full no-flat train half (optional \|move\| weighting) → evaluate once on the no-flat test slice. Persists `tuned_{featset}_{algo}_predictions.npz`, `tuned_params.json`, `selected_{featset}.json`, and `docs/notes/tuning_stats.md`. |

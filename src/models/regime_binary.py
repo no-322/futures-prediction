@@ -153,6 +153,9 @@ def run(config: dict | None = None) -> dict[str, Any]:
     # -- persist models + per-regime importances -----------------------------
     joblib.dump(hmm,    _PROC / "exp_regime_binary_hmm.joblib")
     joblib.dump(scaler, _PROC / "exp_regime_binary_scaler.joblib")
+    # raw→canonical state map — required to pick the right per-regime model at
+    # inference time (assign_regime returns RAW states).
+    joblib.dump(remap,  _PROC / "exp_regime_binary_remap.joblib")
     feature_names = list(features.columns)
     for r in [0, 1]:
         joblib.dump(dir_models[r], _PROC / f"exp_regime_binary_dir_r{r}.joblib")
@@ -176,6 +179,63 @@ def run(config: dict | None = None) -> dict[str, Any]:
         "npz": str(_NPZ),
     }
     return summary
+
+
+def load_bundle(proc: Path = _PROC) -> dict[str, Any]:
+    """Load the saved HMM-regime bundle for inference.
+
+    Args:
+        proc: Directory holding the ``exp_regime_binary_*`` joblibs.
+
+    Returns:
+        Dict with keys ``hmm``, ``scaler``, ``dir_models`` ({0,1}→RF), ``remap``.
+
+    Raises:
+        FileNotFoundError: If any bundle artifact is missing.
+    """
+    proc = Path(proc)
+    need = ["exp_regime_binary_hmm.joblib", "exp_regime_binary_scaler.joblib",
+            "exp_regime_binary_remap.joblib", "exp_regime_binary_dir_r0.joblib",
+            "exp_regime_binary_dir_r1.joblib"]
+    for f in need:
+        if not (proc / f).exists():
+            raise FileNotFoundError(f"missing HMM-regime artifact: {proc / f}")
+    return {
+        "hmm":    joblib.load(proc / "exp_regime_binary_hmm.joblib"),
+        "scaler": joblib.load(proc / "exp_regime_binary_scaler.joblib"),
+        "remap":  joblib.load(proc / "exp_regime_binary_remap.joblib"),
+        "dir_models": {
+            0: joblib.load(proc / "exp_regime_binary_dir_r0.joblib"),
+            1: joblib.load(proc / "exp_regime_binary_dir_r1.joblib"),
+        },
+    }
+
+
+def predict(features: pd.DataFrame, bundle: dict[str, Any]) -> np.ndarray:
+    """Predict binary up/down for new bars with a trained HMM-regime bundle.
+
+    Decodes each bar's regime via the HMM (canonicalised with the saved remap)
+    and dispatches it to that regime's direction model.
+
+    Args:
+        features: v2 feature matrix (must contain the REGIME_COLS columns).
+        bundle: Dict from load_bundle().
+
+    Returns:
+        Integer ndarray of {0, 1} predictions, length len(features).
+    """
+    X = features.values
+    regime_col_idx = [list(features.columns).index(c) for c in REGIME_COLS]
+    raw    = assign_regime(bundle["hmm"], bundle["scaler"], X[:, regime_col_idx])
+    regime = np.array([bundle["remap"][int(r)] for r in raw])
+
+    y_pred = np.full(len(X), -1, dtype=int)
+    for r in [0, 1]:
+        mask = regime == r
+        if mask.sum() > 0:
+            y_pred[mask] = bundle["dir_models"][r].predict(X[mask])
+    assert (y_pred >= 0).all(), "every bar must receive a prediction"
+    return y_pred
 
 
 if __name__ == "__main__":

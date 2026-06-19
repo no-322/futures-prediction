@@ -447,3 +447,119 @@ The code for src.load is wrong. It is not referencing the file correctly. Gives 
 ## 2026-06-04 19:41:40
 
 stage and commit all changes. Do not touch changes to notebook.md
+
+---
+## 2026-06-12 17:49:13
+
+run the app
+
+---
+## 2026-06-12 18:04:09
+
+I was testing the app and I noticed significant issues. 1. Neither training nor test screen has the new models ie the version 2 models and HMM based model. 2. Why do we need a seperate statistics & backtest page when we have a "View Statistics Report" section in prediction page?
+
+---
+## 2026-06-12 19:17:32
+
+I just ran predict svm v2 in the GUI for around 250k rows. Its been running for 45+ mins
+
+---
+## 2026-06-12 19:24:32
+
+I am okay with option 2 that you suggested for behavior but there is a current prediction running and I dont want to hinder it in any way. So wait till it is over and then proceed
+
+---
+## 2026-06-12 19:33:46
+
+go ahead with the changes
+
+---
+## 2026-06-12 19:42:48
+
+are the other models suffering from similar problem and be needing regularization?
+
+---
+## 2026-06-12 19:46:01
+
+commit all changes. We will retrain later
+
+---
+## 2026-06-12 20:12:30
+
+In my last run with the GUI I got this message "Loaded 251,523 rows from data/processed/_upload_pred.csv
+features_v2: 49 features, 251,519 rows  (dropped 4 warm-up rows, filled 54 NaN cells)" Although I am almost certain there are no Nans. I used rows 300k onwards from the dataset. Verify this and also tell me the logic we use for fill Nans
+
+---
+## 2026-06-12 20:33:46
+
+push changes
+
+---
+## 2026-06-12 21:49:52
+
+Remind me again the degree of overtraining in various models
+
+---
+## 2026-06-12 21:53:14
+
+Check in the context files. You calculated and told me this 2 messages back
+
+---
+## 2026-06-12 23:05:56
+
+Did you remove display of summary statistics for previous model when we load model in GUI?
+
+---
+## 2026-06-12 23:12:52
+
+How is it for gradient boost metrics for no-flat v2 are worse than v2 but backtest no-flat earns more?
+
+---
+## 2026-06-13 00:24:24
+
+are the npz files saving the parameters as well?
+
+---
+## 2026-06-18 00:03:52
+
+We need to build a version 2 test where the test set data doesn't have rows where open == close. Next step is to build all stats for this version of the test set as well
+
+---
+## 2026-06-18 08:37:14
+
+commit this
+
+---
+## 2026-06-19 08:05:55
+
+Based on our results so far, what would you suggest as next steps? We will be using test score with no flat as the metric to optimize. I am leaning towards regularization for SVM and RF but what other directions do you think we can lean in?
+
+---
+## 2026-06-19 12:58:24
+
+/btw whats going on
+
+---
+## 2026-06-19 12:58:59
+
+I accidentally rejected it
+
+---
+## 2026-06-19 18:05:52
+
+kill the process. Its taking too much time
+
+---
+## 2026-06-19 20:01:49
+
+Integrate the new models in the GUI
+
+---
+## 2026-06-19 20:26:32
+
+I need 2 things next. One is a pipeline diagram showing execution order of different modules. We already didn it with mermaid package but now lets redo it so that it is created with ASCII characters (maybe dots and dashes). Next I noticed we don't have trained models saved for our recent v3 changes. I need it saved for the GUI predict. Both the v3 features and regularized models. Ignore SVM for now. I need quick results first
+
+---
+## 2026-06-19 20:53:11
+
+commit and push all changes

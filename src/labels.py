@@ -50,7 +50,11 @@ def flat_mask(raw_align: pd.DataFrame) -> np.ndarray:
     Used to drop ambiguous flat rows from the *training* split when focusing on
     pure binary up/down classification. Computed after features are built, so
     removing flagged rows never alters another row's feature vector (no
-    look-ahead). Never apply to the test split — the test set stays whole.
+    look-ahead). Never apply to the test split *for training* — the test set
+    stays whole. Applying it as an evaluation/reporting slice is fine: the
+    "no-flat test" stats (run_stats.section_noflat_test) drop flat bars from the
+    metrics only, after predictions were already made on the whole test set
+    blind to flatness — that is not a refit and not look-ahead.
 
     Args:
         raw_align: Raw DataFrame aligned to the feature matrix (df.iloc[4:]),

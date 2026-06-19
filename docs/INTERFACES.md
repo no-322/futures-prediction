@@ -30,7 +30,7 @@ src/
   pipeline.py      # end-to-end driver for one production model
   statistics.py    # compute (classification metrics) + backtest (equity/P&L)
   backtest.py      # selection/I-O runner around statistics.backtest
-  run_stats.py     # batch stats orchestrator (Sections A/C/D)
+  run_stats.py     # batch stats orchestrator (Sections A/C/D + nft no-flat-test)
   feature_importance.py
   evaluate.py      # legacy accuracy/recall/confusion helpers
 app.py             # Streamlit GUI (train / predict / statistics+backtest)
@@ -70,7 +70,21 @@ produce the same output type/shape for the step it replaces.
 
 **Pre-wired drivers** (already chain the above — call these, or swap a module they use):
 `pipeline.run(algo)` (steps 1–9 for one model) · `run_stats.main()` (batch stats →
-`docs/notes/*.md`) · `backtest.run(algo, transaction_cost)` (steps 1,3–4,8,10–12).
+`docs/notes/*.md`) · `backtest.run(algo, transaction_cost)` (steps 1,3–4,8,10–12) ·
+`tuning.run_tuning(cfg, …)` (model selection → `docs/notes/tuning_stats.md`).
+
+**Model-selection harness (`src.tuning`).** Optimises **no-flat test accuracy**
+while keeping the test set sacred: hyperparameters, threshold, and feature subset
+are chosen on a **no-flat validation fold carved from the training half**
+(`build_selection_split`, the last `val_frac` of train, time-ordered — every
+validation timestamp precedes the test-half start). Only the final retrained model
+touches the test set, once. Model `train()` functions accept an optional
+`sample_weight` (the harness uses `|Close − Open|` when `use_move_weight=True`).
+Artifacts: `tuned_{featset}_{algo}_predictions.npz` (`y_true, y_pred, move, keep`),
+`tuned_params_{featset}.json`, `selected_{featset}.json`. The Streamlit **Predict**
+tab can load these tuned models (a "Use tuned (regularized) model" checkbox, plus
+the v1/v2/**v3** feature radio) and applies the stored threshold via
+`tuning.predict_with_threshold`.
 
 ```mermaid
 flowchart LR
@@ -135,10 +149,17 @@ slice. Validates timestamp monotonicity when a `Date and Time` column is present
 |---|---|---|
 | `build_labels(raw)` / `direction_labels(raw)` | int Series `{0,1}` | `1` if `Close > Open` else `0` |
 | `move_series(raw)` | float Series | `Close − Open` (signed intrabar move) |
-| `flat_mask(raw)` | bool ndarray | `True` where `Close == Open` (drop from **training only**) |
+| `flat_mask(raw)` | bool ndarray | `True` where `Close == Open` (drop from **training only**, or use as a test-set *evaluation* slice — see below) |
 
 Input is the row-aligned raw slice (`df.iloc[4:]` or its train/test split). Length
 and order match the feature matrix.
+
+**No-flat test slice.** `run_stats.test_flat_mask(cfg)` returns the test-set keep
+mask (`~flat_mask(raw_test)`), and `run_stats.section_noflat_test(cfg)` recomputes
+stats for every saved prediction set on that slice → `*_noflat_test.md` reports.
+This drops flat bars from the **metrics only** (predictions were already made on
+the whole test set, blind to flatness); it is not a refit and does not violate
+the "test set is sacred" rule. Equivalently, `flat ⇔ move == 0 ⇔ bar_return == 0`.
 
 ### 3.5 Models — `src/models/<algo>.py` (baseline, rf, gbm, svm)
 Uniform interface:

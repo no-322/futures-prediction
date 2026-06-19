@@ -53,3 +53,15 @@ def test_save_load_roundtrip(rf_results: tuple, tmp_path) -> None:
     loaded = load(path)
     assert loaded.oob_score_ == model.oob_score_
     np.testing.assert_array_equal(predict(model, X_test.iloc[:20]), predict(loaded, X_test.iloc[:20]))
+
+
+def test_train_accepts_sample_weight(tmp_path) -> None:
+    rng = np.random.RandomState(42)
+    X = pd.DataFrame(rng.randn(80, 5), columns=[f"f{i}" for i in range(5)])
+    y = pd.Series((X["f0"] + 0.1 * rng.randn(80) > 0).astype(int))
+    w = np.abs(rng.randn(80)) + 0.1
+    model = train(X, y, params={"oob_score": False}, save_path=tmp_path / "m.joblib",
+                  sample_weight=w)
+    preds = predict(model, X)
+    assert len(preds) == len(X)
+    assert set(np.unique(preds)) <= {0, 1}
