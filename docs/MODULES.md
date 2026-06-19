@@ -176,6 +176,7 @@ Binary HMM-regime direction model (Experiment 5): a Gaussian HMM detects 2 regim
 | `section_d` | `(cfg: dict, skip_existing: bool = False) -> None` | Additively train the two 49-feature binary variants (flat-included `exp_v2_*`, no-flat `exp_noflat_v2_*`) and write `docs/notes/binary_v2_stats.md` with per-label confusion-matrix metrics. Uses the cached v2 feature matrix; never touches the 20-feature artifacts or other reports. |
 | `test_flat_mask` | `(cfg: dict) -> np.ndarray` | Reconstruct the 50/50 test slice (`df.iloc[4:]` → split) and return the boolean "keep" mask (`True` where `Close != Open`), aligned 1-to-1 with every binary model's saved test predictions. |
 | `section_noflat_test` | `(cfg: dict) -> None` | No-flat-test evaluation slice: read every existing `{stem}_predictions.npz` (no retraining), drop flat (`Open == Close`) test rows via `test_flat_mask`, recompute stats, and write three sibling reports (`all_stats_noflat_test.md`, `binary_noflat_stats_noflat_test.md`, `binary_v2_stats_noflat_test.md`). Length-mismatched sets (3-class / two-stage) are skipped. |
+| `leaderboard` | `(cfg: dict) -> None` | Write `docs/notes/model_leaderboard.md`: one row per binary model (read from each `{stem}_predictions.npz`, no retraining) with no-flat test accuracy, full-test accuracy, and full-test MCC, sorted by no-flat accuracy then MCC. Non-binary / length-mismatched sets are excluded and listed. |
 
 ## src.tuning
 

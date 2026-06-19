@@ -328,6 +328,22 @@ def _render_hyperparams(algo: str, current: dict) -> dict:
     return p
 
 
+def _merge_cfg(base: dict, override: dict) -> dict:
+    """Deep-merge `override` onto `base` (nested dicts merged, scalars replaced).
+
+    Used to apply an uploaded YAML config on top of the on-disk config.yaml so the
+    GUI can seed its train-size and hyperparameter widgets from the file.
+    """
+    import copy as _copy
+    out = _copy.deepcopy(base)
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _merge_cfg(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
 def _write_statistics(
     preds: np.ndarray,
     y_true: np.ndarray | None,
@@ -469,6 +485,38 @@ with tab_train:
         help="Required columns: Date and Time, Open, Close, High, Low, VWAP, Symbol.",
     )
 
+    # --- optional YAML config (seeds train/test split + model params) ------
+    uploaded_cfg = st.file_uploader(
+        "Configure from YAML (optional)",
+        type=["yaml", "yml"],
+        key="train_cfg",
+        help="A config.yaml-shaped file: `data: {train_size: ...}` and "
+             "`models: {<algo>: {...}}`. Seeds the controls below; `data.path` is "
+             "ignored (the uploaded CSV is used). Review, then Train.",
+    )
+    eff_cfg = cfg
+    if uploaded_cfg is not None:
+        try:
+            loaded = yaml.safe_load(uploaded_cfg.getvalue()) or {}
+            if not isinstance(loaded, dict):
+                raise ValueError("top level must be a mapping (data: / models:)")
+            eff_cfg = _merge_cfg(cfg, loaded)
+            bits = []
+            data_blk = loaded.get("data")
+            if isinstance(data_blk, dict) and "train_size" in data_blk:
+                bits.append(f"train_size={data_blk['train_size']}")
+            models_blk = loaded.get("models")
+            if isinstance(models_blk, dict) and models_blk:
+                bits.append("models: " + ", ".join(models_blk.keys()))
+            st.success(
+                "YAML config applied — "
+                + ("; ".join(bits) if bits else "no `data`/`models` keys found")
+                + ". Controls below are seeded from it."
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not parse YAML config: {exc}. Using defaults.")
+            eff_cfg = cfg
+
     st.markdown("---")
 
     # --- model + feature-set + flat selectors (training: no tuned/v3) ------
@@ -481,8 +529,8 @@ with tab_train:
     else:
         st.caption(f"No saved **{variant_label}** model yet.")
 
-    # --- train size --------------------------------------------------------
-    default_pct = int(cfg["data"].get("train_size", 0.5) * 100)
+    # --- train size (seeded from eff_cfg → YAML can set the test split) ----
+    default_pct = int(eff_cfg["data"].get("train_size", 0.5) * 100)
     train_pct = st.number_input(
         "Training size (%)",
         min_value=1, max_value=99, value=default_pct, step=5,
@@ -492,7 +540,7 @@ with tab_train:
 
     # --- advanced hyperparameters (HMM trains per-regime RFs → use rf knobs) -
     hp_algo = "rf" if algo == "hmm" else algo
-    current_params = _model_params(cfg, hp_algo)
+    current_params = _model_params(eff_cfg, hp_algo)
     with st.expander("Advanced Hyperparameters", expanded=False):
         new_params = _render_hyperparams(hp_algo, current_params)
 
@@ -507,7 +555,7 @@ with tab_train:
         UPLOAD_TRAIN.write_bytes(uploaded_train.getvalue())
 
         import copy as _copy
-        cfg2 = _copy.deepcopy(cfg)
+        cfg2 = _copy.deepcopy(eff_cfg)
         cfg2["data"]["path"] = str(UPLOAD_TRAIN)
         cfg2["data"]["train_size"] = train_pct / 100
         cfg2.setdefault("models", {})[hp_algo] = new_params

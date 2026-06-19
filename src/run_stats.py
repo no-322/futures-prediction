@@ -57,6 +57,8 @@ _NFT_REPORT_PATH = Path("docs/notes/all_stats_noflat_test.md")
 _NFT_NOFLAT_REPORT_PATH = Path("docs/notes/binary_noflat_stats_noflat_test.md")
 _NFT_V2_REPORT_PATH = Path("docs/notes/binary_v2_stats_noflat_test.md")
 
+_LEADERBOARD_PATH = Path("docs/notes/model_leaderboard.md")
+
 _REGIME_LABELS = {0: "low-vol / calm", 1: "high-vol / active"}
 
 # 49-feature binary variants: (prefix, drop_flat, display_suffix, section title).
@@ -363,6 +365,75 @@ def section_noflat_test(cfg: dict) -> None:
         print(f"  → {_NFT_V2_REPORT_PATH}")
 
 
+def _leaderboard_name(stem: str, registry: dict[str, str]) -> str:
+    """Human-readable model name for a prediction-set stem."""
+    if stem in registry:
+        return registry[stem]
+    if stem.startswith("tuned_"):
+        from src.binary_suite import BASE_DISPLAY
+        _, feat, algo = stem.split("_", 2)
+        return f"{BASE_DISPLAY.get(algo, algo)} (tuned, {feat})"
+    return stem
+
+
+def leaderboard(cfg: dict) -> None:
+    """Write docs/notes/model_leaderboard.md comparing every binary model.
+
+    Reads each data/processed/{stem}_predictions.npz (no retraining), computes
+    full-test accuracy + MCC and no-flat test accuracy (Open==Close bars dropped
+    from evaluation only), and writes a 4-column table sorted by no-flat accuracy
+    then full-test MCC. Non-binary sets (3-class / two-stage / regime_v2, which
+    have a different length) are skipped and listed.
+    """
+    from src import backtest
+
+    keep = test_flat_mask(cfg)
+    n_keep, n_total = int(keep.sum()), int(keep.size)
+    registry = backtest._build_registry()
+    proc = Path("data/processed")
+
+    rows: list[tuple[str, float, float, float]] = []
+    skipped: list[str] = []
+    for npz in sorted(proc.glob("*_predictions.npz")):
+        stem = npz.name[: -len("_predictions.npz")]
+        if stem.startswith("backtest_"):
+            continue
+        d = np.load(npz)
+        if "y_pred" not in d or "y_true" not in d or len(d["y_pred"]) != n_total:
+            skipped.append(stem)
+            continue
+        yt, yp = d["y_true"], d["y_pred"]
+        full = statistics.compute(yt, yp)
+        nf_acc = statistics.compute(yt[keep], yp[keep])["accuracy"]
+        rows.append((_leaderboard_name(stem, registry), nf_acc,
+                     full["accuracy"], full["mcc"]))
+
+    # Sort by no-flat accuracy, then full-test MCC (both descending).
+    rows.sort(key=lambda r: (r[1], r[3]), reverse=True)
+
+    lines = [
+        "# Model Leaderboard\n\n",
+        "Every binary up/down model on the 50/50 time-ordered test set, compared "
+        "in one place. **Sorted by no-flat test accuracy, then full-test MCC.**\n\n",
+        f"- *No-flat test accuracy*: accuracy on the {n_keep:,} of {n_total:,} test "
+        "bars where `Close != Open` (flat bars dropped from evaluation only).\n",
+        "- *Accuracy* and *MCC*: computed on the full test set.\n",
+    ]
+    if skipped:
+        lines.append("- Excluded (non-binary / different length): "
+                     + ", ".join(f"`{s}`" for s in sorted(skipped)) + ".\n")
+    lines += [
+        "\n| Model | No-flat test acc | Accuracy | MCC |\n",
+        "|-------|------------------|----------|-----|\n",
+    ]
+    for name, nf_acc, acc, mcc in rows:
+        lines.append(f"| {name} | {nf_acc:.4f} | {acc:.4f} | {mcc:.4f} |\n")
+
+    _LEADERBOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _LEADERBOARD_PATH.write_text("".join(lines))
+    print(f"Leaderboard ({len(rows)} models) → {_LEADERBOARD_PATH}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compute stats for all binary models")
     parser.add_argument(
@@ -370,12 +441,12 @@ def main() -> None:
         help="Skip suites whose .npz predictions already exist",
     )
     parser.add_argument(
-        "--sections", nargs="+", choices=["a", "c", "d", "nft"],
+        "--sections", nargs="+", choices=["a", "c", "d", "nft", "lb"],
         default=["a", "c", "d"],
         help="Which sections to run (a=production, c=no-flat 20-feat + HMM, "
-             "d=49-feature binary suites, nft=no-flat-test slice stats for all "
-             "saved prediction sets — reads existing .npz, no retraining, so run "
-             "a/c/d first). Default: a c d.",
+             "d=49-feature binary suites, nft=no-flat-test slice stats, "
+             "lb=model_leaderboard.md across all saved prediction sets — "
+             "reads existing .npz, no retraining, so run a/c/d first). Default: a c d.",
     )
     args = parser.parse_args()
 
@@ -392,6 +463,8 @@ def main() -> None:
         section_d(cfg, skip_existing=args.skip_existing)
     if "nft" in args.sections:
         section_noflat_test(cfg)
+    if "lb" in args.sections:
+        leaderboard(cfg)
 
 
 if __name__ == "__main__":

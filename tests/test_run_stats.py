@@ -12,10 +12,12 @@ import pytest
 import src.statistics as statistics
 from src.config import load_config
 from src.run_stats import (
+    _LEADERBOARD_PATH,
     _NFT_NOFLAT_REPORT_PATH,
     _NFT_REPORT_PATH,
     _NFT_V2_REPORT_PATH,
     _nft_stats,
+    leaderboard,
     section_noflat_test,
 )
 # Aliased so pytest does not collect this `test_`-prefixed helper as a test.
@@ -94,3 +96,20 @@ def test_section_writes_reports(cfg: dict) -> None:
         assert _NFT_NOFLAT_REPORT_PATH.exists()
     if (_PROC / "exp_v2_rf_predictions.npz").exists():
         assert _NFT_V2_REPORT_PATH.exists()
+
+
+def test_leaderboard_writes_sorted(cfg: dict) -> None:
+    if not (_PROC / "rf_predictions.npz").exists():
+        pytest.skip("production predictions not present")
+    leaderboard(cfg)
+    assert _LEADERBOARD_PATH.exists()
+    text = _LEADERBOARD_PATH.read_text()
+    assert "| Model | No-flat test acc | Accuracy | MCC |" in text
+    # Data rows: start with "|", skip the header and the |---| separator.
+    nf_accs = [
+        float(line.split("|")[2])
+        for line in text.splitlines()
+        if line.startswith("|") and "Model" not in line and "---" not in line
+    ]
+    assert len(nf_accs) > 1
+    assert nf_accs == sorted(nf_accs, reverse=True)  # ordered by no-flat acc

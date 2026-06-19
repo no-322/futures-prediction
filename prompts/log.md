@@ -563,3 +563,48 @@ I need 2 things next. One is a pipeline diagram showing execution order of diffe
 ## 2026-06-19 20:53:11
 
 commit and push all changes
+
+---
+## 2026-06-19 20:59:47
+
+I noticed that the pushes are done to integrate binary branch instead of main. Any reason for that?
+
+---
+## 2026-06-19 21:04:48
+
+gh route works
+
+---
+## 2026-06-19 21:07:33
+
+done
+
+---
+## 2026-06-19 21:09:51
+
+yes, sync local main
+
+---
+## 2026-06-19 21:35:26
+
+How feasible would it be for the GUI to take a md or csv file and configure the parameters based on that? Another thing we need to get done is in the EDA notebook check how many rows with close==open were just market down time- we can do this by checking if volume =0
+
+---
+## 2026-06-19 21:42:00
+
+Make the changes in GUI so that test also can be configured with just YAML file
+
+---
+## 2026-06-19 22:00:52
+
+Put together a model_leaderboad.md which would give me a summary to compare all models in one file. It should have 4 columns- 1. model name 2. no-flat test accuracy 3. accuracy 4. MCC. The models should be ordered by column 2 and then by MCC
+
+---
+## 2026-06-19 23:02:32
+
+continue
+
+---
+## 2026-06-19 23:05:20
+
+push to main going forward. Integrate-binary doesnt make sense to me anymore. commit and push
