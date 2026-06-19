@@ -38,3 +38,7 @@ Key result: the difference observed in accuracy vs prediction in SVM is because 
 Created pipeline.py that is an automated end to end model that runs based on selected model. We can use the CLI to give parameters on what model to run and change the other previously static parameters as well- random state is still fixed at 42. Created a yaml file that will act as the intermediary between the GUI and CLI. All the changes will be made in the config based on the user inputs. The parameters are then passed on to the pipeline and individual files.
 
 Created the GUI. I wanted to have an info button that shows if a trained model already exists. But had issue because json file was needed that tracks models trained with GUI but not CLI. Reworking the pipeline so that we have a centralized metadata file to track all the available trained joblib files. 
+
+## 2026-06-12 - Friday
+
+I noticed that SVM not only takes time to train but also 3.5 hrs to predict 250k rows. On investigation I found that overtraining in SVM and random forest. SVM has nearly one support vector for every record. Similarly random forest is too deep. After dropping flat bars GBM is making a profit of 300+%. Logistic and GBM are the ones with least overfitting. But when we add a transaction cost of even 1bp this 300% doesn't persist. We get a drawdown of 100%. Adding regularization might help rf and svm. Current rf model goes 68-188 levels. Next step would be to introduce max_depth somewhere between 5-10. raise min_sample_leaf and use ccp_alpha for regularization.  

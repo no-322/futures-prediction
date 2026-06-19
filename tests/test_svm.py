@@ -70,3 +70,15 @@ def test_save_load_roundtrip(svm_results: tuple, tmp_path) -> None:
         predict(model, X_test.iloc[:20]),
         predict(loaded, X_test.iloc[:20]),
     )
+
+
+def test_train_accepts_sample_weight(tmp_path) -> None:
+    import pandas as pd
+    rng = np.random.RandomState(42)
+    X = pd.DataFrame(rng.randn(80, 5), columns=[f"f{i}" for i in range(5)])
+    y = pd.Series((X["f0"] + 0.1 * rng.randn(80) > 0).astype(int))
+    w = np.abs(rng.randn(80)) + 0.1
+    model = train(X, y, save_path=tmp_path / "m.joblib", sample_weight=w)
+    preds = predict(model, X)
+    assert len(preds) == len(X)
+    assert set(np.unique(preds)) <= {0, 1}

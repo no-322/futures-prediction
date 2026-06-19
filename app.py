@@ -31,7 +31,8 @@ DISPLAY_ALGO: dict[str, str] = {v: k for k, v in ALGO_DISPLAY.items()}
 # Model dropdown for both tabs (4 base classifiers + HMM-regime).
 MODEL_OPTIONS = ["Random Forest", "Gradient Boosting", "SVM",
                  "Logistic Regression", "HMM-regime"]
-_FEATURE_LABELS = {"v1": "v1 — 20 features", "v2": "v2 — 49 features"}
+_FEATURE_LABELS = {"v1": "v1 — 20 features", "v2": "v2 — 49 features",
+                   "v3": "v3 — 48 features (stationary)"}
 PROC_DIR = Path("data/processed")
 
 REQUIRED_COLS = {"Date and Time", "Open", "Close", "High", "Low", "VWAP"}
@@ -94,48 +95,79 @@ def _confusion_df(cm: np.ndarray) -> pd.DataFrame:
 
 # --- model-variant resolution (model × feature-set × flat) ----------------
 
-def _variant_stem(algo: str, feat: str, drop_flat: bool) -> str:
-    """Artifact stem for a (base algo, feature set, flat-toggle) variant.
+def _variant_stem(algo: str, feat: str, drop_flat: bool, tuned: bool = False) -> str:
+    """Artifact stem for a (base algo, feature set, flat-toggle, tuned) variant.
 
+    tuned → "tuned_<feat>_<algo>" (any of v1/v2/v3, always no-flat). Otherwise:
     v1+flat-incl → "<algo>" (production); v1+no-flat → "exp_noflat_<algo>";
     v2+flat-incl → "exp_v2_<algo>"; v2+no-flat → "exp_noflat_v2_<algo>".
     """
+    if tuned:
+        return f"tuned_{feat}_{algo}"
     if feat == "v1":
         return f"exp_noflat_{algo}" if drop_flat else algo
-    return f"exp_noflat_v2_{algo}" if drop_flat else f"exp_v2_{algo}"
+    if feat == "v2":
+        return f"exp_noflat_v2_{algo}" if drop_flat else f"exp_v2_{algo}"
+    raise ValueError(f"feat={feat!r} is only available as a tuned model")
 
 
-def _model_joblib(algo: str, feat: str, drop_flat: bool) -> Path:
-    return PROC_DIR / f"{_variant_stem(algo, feat, drop_flat)}_model.joblib"
+def _model_joblib(algo: str, feat: str, drop_flat: bool, tuned: bool = False) -> Path:
+    return PROC_DIR / f"{_variant_stem(algo, feat, drop_flat, tuned)}_model.joblib"
 
 
-def _model_exists(algo: str, feat: str, drop_flat: bool) -> bool:
+def _model_exists(algo: str, feat: str, drop_flat: bool, tuned: bool = False) -> bool:
     if algo == "hmm":
-        return (PROC_DIR / "exp_regime_binary_hmm.joblib").exists()
-    return _model_joblib(algo, feat, drop_flat).exists()
+        return not tuned and (PROC_DIR / "exp_regime_binary_hmm.joblib").exists()
+    try:
+        return _model_joblib(algo, feat, drop_flat, tuned).exists()
+    except ValueError:               # e.g. untuned v3 has no artifact
+        return False
 
 
-def _model_selectors(key_prefix: str) -> tuple[str, str, bool, str]:
-    """Render Model + Feature-set + drop-flat selectors; return (algo, feat, drop_flat, display)."""
+def _model_selectors(
+    key_prefix: str,
+    allow_tuned: bool = False,
+    feats: tuple[str, ...] = ("v1", "v2"),
+) -> tuple[str, str, bool, bool, str]:
+    """Render Model + Feature-set + flat (+ tuned) selectors.
+
+    Returns (algo, feat, drop_flat, tuned, display). The tuned checkbox is shown
+    only when `allow_tuned` (and not HMM); tuned models train no-flat and apply a
+    stored decision threshold, so the drop-flat checkbox is disabled when tuned.
+    """
     display = st.selectbox("Model", MODEL_OPTIONS, key=f"{key_prefix}_model")
     algo    = DISPLAY_ALGO[display]
     is_hmm  = algo == "hmm"
+
+    tuned = False
+    if allow_tuned:
+        tuned = st.checkbox(
+            "Use tuned (regularized) model", value=False,
+            disabled=is_hmm, key=f"{key_prefix}_tuned",
+            help="Load the hyperparameter-tuned model from src.tuning "
+                 "(trained no-flat on a validation-selected config) and apply its "
+                 "stored decision threshold.",
+        )
+
     c1, c2  = st.columns(2)
     feat = c1.radio(
-        "Feature set", ["v1", "v2"],
+        "Feature set", list(feats),
         format_func=lambda v: _FEATURE_LABELS[v],
         horizontal=True, disabled=is_hmm, key=f"{key_prefix}_feat",
     )
     drop_flat = c2.checkbox(
         "Drop flat (Close==Open) training bars", value=False,
-        disabled=is_hmm, key=f"{key_prefix}_flat",
+        disabled=is_hmm or tuned, key=f"{key_prefix}_flat",
         help="Exclude bars where Close == Open from the training set "
              "(focus on pure up/down). Test set is never filtered.",
     )
+    if tuned:                        # tuned models are always trained no-flat
+        drop_flat = True
+        c2.caption("Tuned models train no-flat and apply a tuned threshold.")
     if is_hmm:                       # HMM-regime is always v2 / no-flat
         feat, drop_flat = "v2", True
         c1.caption("HMM-regime uses the 49-feature set and drops flats by design.")
-    return algo, feat, drop_flat, display
+    return algo, feat, drop_flat, tuned, display
 
 
 def _show_eval(y_true: np.ndarray | None, y_pred: np.ndarray) -> None:
@@ -439,8 +471,8 @@ with tab_train:
 
     st.markdown("---")
 
-    # --- model + feature-set + flat selectors ------------------------------
-    algo, feat, drop_flat, model_display = _model_selectors("train")
+    # --- model + feature-set + flat selectors (training: no tuned/v3) ------
+    algo, feat, drop_flat, _train_tuned, model_display = _model_selectors("train")
     variant_label = ("HMM-regime" if algo == "hmm"
                      else f"{model_display} · {feat}"
                           + (" · no-flat" if drop_flat else ""))
@@ -535,11 +567,14 @@ with tab_predict:
         "Open and Close columns, accuracy metrics are computed as well."
     )
 
-    # --- model + feature-set + flat selectors ------------------------------
-    p_algo, p_feat, p_drop_flat, p_display = _model_selectors("pred")
+    # --- model + feature-set + flat (+ tuned) selectors --------------------
+    p_algo, p_feat, p_drop_flat, p_tuned, p_display = _model_selectors(
+        "pred", allow_tuned=True, feats=("v1", "v2", "v3"))
     p_variant = ("HMM-regime" if p_algo == "hmm"
-                 else f"{p_display} · {p_feat}" + (" · no-flat" if p_drop_flat else ""))
-    p_available = _model_exists(p_algo, p_feat, p_drop_flat)
+                 else f"{p_display} · {p_feat}"
+                      + (" · tuned" if p_tuned else "")
+                      + (" · no-flat" if p_drop_flat and not p_tuned else ""))
+    p_available = _model_exists(p_algo, p_feat, p_drop_flat, p_tuned)
     if not p_available:
         st.warning(f"No saved **{p_variant}** model — train it in the Training tab first.")
 
@@ -551,11 +586,11 @@ with tab_predict:
     # --- SVM is the only slow predictor: show a time estimate + row cap -----
     svm_cap = 0
     if p_algo == "svm" and p_available:
-        mpath_sel = _model_joblib(p_algo, p_feat, p_drop_flat)
+        mpath_sel = _model_joblib(p_algo, p_feat, p_drop_flat, p_tuned)
         try:
             n_sv, n_feat = _svm_sv_count(_load_svm_cached(str(mpath_sel)))
         except Exception:
-            n_sv, n_feat = 0, (49 if p_feat == "v2" else 20)
+            n_sv, n_feat = 0, {"v2": 49, "v3": 48}.get(p_feat, 20)
         per_row = _estimate_svm_seconds(n_sv, 1, n_feat) if n_sv else 0.0
         # Default cap targets ~90 s of prediction time, rounded to 500 rows.
         default_cap = (int(round(max(1000, 90 / per_row) / 500)) * 500
@@ -616,13 +651,16 @@ with tab_predict:
 
             with st.spinner("Building features…"):
                 df = load_raw(UPLOAD_PRED)
-                use_v2 = (p_feat == "v2") or (p_algo == "hmm")
-                if use_v2 and not V2_EXTRA.issubset(df.columns):
+                needs_ticks = p_feat in ("v2", "v3") or (p_algo == "hmm")
+                if needs_ticks and not V2_EXTRA.issubset(df.columns):
                     raise ValueError(
-                        "v2 / HMM models also need tick columns: "
+                        "v2 / v3 / HMM models also need tick columns: "
                         + ", ".join(sorted(V2_EXTRA))
                     )
-                if use_v2:
+                if p_feat == "v3":
+                    from src.features_v3 import build_features_v3  # noqa: E402
+                    features = build_features_v3(df)
+                elif p_feat == "v2" or p_algo == "hmm":
                     from src.features_v2 import build_features_v2  # noqa: E402
                     features = build_features_v2(df)
                 else:
@@ -631,17 +669,27 @@ with tab_predict:
 
             raw_align = df.iloc[4:].reset_index(drop=True)
 
+            # Tuned models apply the decision threshold chosen on the validation
+            # fold (stored in tuned_params_{feat}.json); untuned → None (default).
+            import src.tuning as _tuning                              # noqa: E402
+            thr = None
+            if p_tuned:
+                tp = PROC_DIR / f"tuned_params_{p_feat}.json"
+                if tp.exists():
+                    thr = (json.loads(tp.read_text())["models"]
+                           .get(p_algo, {}).get("threshold"))
+
             if p_algo == "svm":
                 # Capped + chunked (progress + cancellable) — RBF predict is slow.
-                from src.models.svm import predict as svm_predict   # noqa: E402
                 if svm_cap and len(features) > svm_cap:
                     st.info(f"Predicting the first {svm_cap:,} of {len(features):,} rows "
                             "(SVM cap). Statistics & backtest use this subset.")
                     features = features.iloc[:svm_cap]
-                _svm = _load_svm_cached(str(_model_joblib(p_algo, p_feat, p_drop_flat)))
+                _svm = _load_svm_cached(
+                    str(_model_joblib(p_algo, p_feat, p_drop_flat, p_tuned)))
                 preds = _predict_chunked(
-                    lambda X: svm_predict(_svm, X), features,
-                    label="SVM predicting", chunk=2000,
+                    lambda X: _tuning.predict_with_threshold("svm", _svm, X, thr),
+                    features, label="SVM predicting", chunk=2000,
                 )
             else:
                 with st.spinner(f"Predicting with {p_variant}…"):
@@ -649,15 +697,14 @@ with tab_predict:
                         from src.models import regime_binary            # noqa: E402
                         preds = regime_binary.predict(features, regime_binary.load_bundle())
                     else:
-                        mpath = _model_joblib(p_algo, p_feat, p_drop_flat)
+                        mpath = _model_joblib(p_algo, p_feat, p_drop_flat, p_tuned)
                         from src.models import baseline, rf             # noqa: E402
-                        from src.models.gbm import load as gbm_load, predict as gbm_predict  # noqa: E402
-                        if p_algo == "baseline":
-                            preds = baseline.predict(baseline.load(mpath), features)
-                        elif p_algo == "rf":
-                            preds = rf.predict(rf.load(mpath), features)
-                        else:  # gbm
-                            preds = gbm_predict(gbm_load(mpath), features)
+                        from src.models.gbm import load as gbm_load     # noqa: E402
+                        loaders = {"baseline": baseline.load, "rf": rf.load,
+                                   "gbm": gbm_load}
+                        model = loaders[p_algo](mpath)
+                        preds = _tuning.predict_with_threshold(
+                            p_algo, model, features, thr)
 
             # Align the raw slice to the predictions (handles the SVM row cap).
             raw_align = raw_align.iloc[:len(preds)].reset_index(drop=True)
@@ -675,7 +722,8 @@ with tab_predict:
 
             st.session_state.predict_result = {
                 "display": p_variant, "algo": p_algo, "feat": p_feat,
-                "drop_flat": p_drop_flat, "file": uploaded_pred.name,
+                "drop_flat": p_drop_flat, "tuned": p_tuned,
+                "file": uploaded_pred.name,
                 "preds": np.asarray(preds), "y_true": y_true,
                 "bar_returns": bar_returns, "timestamps": timestamps,
                 "cost": float(txn_cost),
@@ -728,6 +776,7 @@ with tab_predict:
 
         plot_path = Path("docs/notes") / (
             f"backtest_gui_{pr['algo']}_{pr['feat']}"
+            f"{'_tuned' if pr.get('tuned') else ''}"
             f"{'_noflat' if pr['drop_flat'] else ''}.png"
         )
         _stats.plot_equity_curve(bt, plot_path)

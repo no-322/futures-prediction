@@ -528,3 +528,38 @@ We need to build a version 2 test where the test set data doesn't have rows wher
 ## 2026-06-18 08:37:14
 
 commit this
+
+---
+## 2026-06-19 08:05:55
+
+Based on our results so far, what would you suggest as next steps? We will be using test score with no flat as the metric to optimize. I am leaning towards regularization for SVM and RF but what other directions do you think we can lean in?
+
+---
+## 2026-06-19 12:58:24
+
+/btw whats going on
+
+---
+## 2026-06-19 12:58:59
+
+I accidentally rejected it
+
+---
+## 2026-06-19 18:05:52
+
+kill the process. Its taking too much time
+
+---
+## 2026-06-19 20:01:49
+
+Integrate the new models in the GUI
+
+---
+## 2026-06-19 20:26:32
+
+I need 2 things next. One is a pipeline diagram showing execution order of different modules. We already didn it with mermaid package but now lets redo it so that it is created with ASCII characters (maybe dots and dashes). Next I noticed we don't have trained models saved for our recent v3 changes. I need it saved for the GUI predict. Both the v3 features and regularized models. Ignore SVM for now. I need quick results first
+
+---
+## 2026-06-19 20:53:11
+
+commit and push all changes

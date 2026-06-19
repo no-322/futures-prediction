@@ -1,182 +1,107 @@
 # Pipeline Module Diagram
 
-End-to-end architecture of the Futures Price Direction Predictor.
-Nodes are source files; edges show data flow.
+End-to-end architecture of the Futures Price Direction Predictor, drawn in plain
+ASCII (so it renders in any monospace view). Nodes are source files; arrows show
+**execution / data-flow order** — read top to bottom, where `A --> B` (or
+`A | v B`) means *A runs or feeds data before B*.
 
-```mermaid
-flowchart TD
+```text
+  FUTURES PRICE DIRECTION PREDICTOR  —  module execution order
 
-    %% ── Storage ────────────────────────────────────────────────────────────
-    subgraph STORE["Storage"]
-        RAW[("data/raw/data.csv\n551k minute bars")]
-        PROC[("data/processed/\njoblibs / npz / parquet\ntraining_metadata.json")]
-        DOCS[("docs/\nresults.md\nnotes/all_stats.md")]
-        CFG_FILE[("config.yaml\ntrain_size / hyperparams")]
-    end
+  config.yaml                          data/raw/data.csv
+     |                                       |
+     | load_config / model_params            | load_raw + validate
+     v                                       v
+  +-----------+                        +-----------+
+  | config.py |                        | load.py   |
+  +-----+-----+                        +-----+-----+
+        |                                    |
+        | params / train_size                | raw OHLCV (+ tick cols)
+        |                                    |
+        |             .----------------------+----------------------.
+        |             v                      v                      v
+        |       +-----------+          +-----------+          +-----------+
+        |       |features.py|          |features_v2|          | labels.py |
+        |       |  v1 (20)  |          |   (49)    |          | y / flat /|
+        |       +-----+-----+          +-----+-----+          |   move    |
+        |             |                      |                +-----+-----+
+        |             |                      v                      |
+        |             |                +-----------+                |
+        |             |                |features_v3|                |
+        |             |                | (48, stat)|                |
+        |             |                +-----+-----+                |
+        |             '----------------------+----------------------'
+        |                                    |  X (features) + y (labels)
+        |                                    v
+        |                              +-----------+
+        |                              | split.py  |   50/50 time-ordered
+        |                              +-----+-----+   (no shuffle)
+        |                                    |
+        |        X_train / y_train           |          X_test / y_test
+        |                                    v
+        |   +--------------------------------------------------------+
+        |   | src/models/                                            |
+        |   |   baseline    rf    gbm    svm                         |
+        |   |   regime_hmm  -->  regime_binary                       |
+        |   +-------------------------------+------------------------+
+        |                                   |  fitted model + y_pred
+        |                                   v
+        |   ===== ORCHESTRATORS  (drive the stages above) ============
+        '-> pipeline.py      one production model end-to-end + metadata
+            binary_suite.py  v1/v2 x flat-toggle variants  -> exp_* npz
+            tuning.py        HPO on a no-flat VALIDATION fold (carved from
+                             TRAIN); saves tuned_{feat}_{algo} + threshold
+                                   |
+                                   |  joblib / npz / parquet
+                                   v
+                            +----------------+
+                            | data/processed |<--------------------------.
+                            +-------+--------+                           |
+                                    |                                    |
+                  .-----------------+------------------.                 |
+                  v                 v                  v                 |
+            +-----------+     +-----------+      +-----------+           |
+            |statistics |     |backtest.py|      |run_stats  |           |
+            |.py compute|     | equity &  |      |.py  batch |           |
+            |(+bt math) |     | P&L vs    |      | + no-flat |           |
+            +-----+-----+     | passive   |      | test slice|           |
+                  |           +-----+-----+      +-----+-----+           |
+                  '-----------------+------------------'                 |
+                                    |  markdown reports                  |
+                                    v                                    |
+                            +----------------+      +-----------------+  |
+                            | docs/notes/*.md|      | app.py (GUI)    |  |
+                            | docs/results.md|<reads| Train / Predict |--'
+                            +----------------+      +-----------------+
+                                                    loads model, applies
+                                                    tuned threshold
 
-    %% ── Configuration ──────────────────────────────────────────────────────
-    subgraph CONFIG["Configuration"]
-        CFG["src/config.py\nload_config\nmodel_params"]
-    end
-
-    %% ── Ingestion ──────────────────────────────────────────────────────────
-    subgraph INGEST["Ingestion"]
-        LOAD["src/load.py\nload_raw / validate"]
-    end
-
-    %% ── Feature Engineering ────────────────────────────────────────────────
-    subgraph FEAT_ENG["Feature Engineering"]
-        FEAT["src/features.py\nbuild_features\n20 lagged OHLCV features"]
-        LABELS["src/labels.py\nbuild_labels\nClose gt Open = 1 else 0"]
-    end
-
-    %% ── Splitting ──────────────────────────────────────────────────────────
-    subgraph SPLIT_BOX["Splitting"]
-        SPLIT["src/split.py\nsplit\ntime-ordered / no shuffle"]
-    end
-
-    %% ── Models ─────────────────────────────────────────────────────────────
-    subgraph MODELS["Models  src/models/"]
-        BASE["baseline.py\nLogisticRegression"]
-        RF["rf.py\nRandomForest\n500 trees / OOB"]
-        GBM["gbm.py\nXGBClassifier\nlr=0.05 / depth=4"]
-        SVM_M["svm.py\nSVC + StandardScaler\nRBF kernel"]
-    end
-
-    %% ── Evaluation ─────────────────────────────────────────────────────────
-    subgraph EVAL_BOX["Evaluation"]
-        STATS["src/statistics.py\ncompute\nStatsResult TypedDict\naccuracy / macro-F1 / MCC\nper-class P / R / F1"]
-        EVALUATE["src/evaluate.py\naccuracy / recall\nconfusion / write_results"]
-    end
-
-    %% ── Orchestration ──────────────────────────────────────────────────────
-    subgraph ORCH["Orchestration"]
-        PIPE["src/pipeline.py\nrun\nload-or-train cache\nwrites metadata.json"]
-        GUI["app.py\nStreamlit GUI\nTraining tab\nPrediction tab"]
-    end
-
-    %% ── Experiments ────────────────────────────────────────────────────────
-    subgraph EXP["Experiments  src/experiments/  branch: exp/feature-engineering"]
-        FEAT2["features_v2.py\nbuild_features_v2\n49 features incl MACD / RSI\nvol / tick-delta / ToD"]
-        EXP_LBL["labels.py\nthree_class_labels\ngate_labels / direction_labels"]
-        EXP_MET["metrics.py\nmcc / macro_f1\ncoverage / conditional_hit_rate\ngate_recall_debug"]
-        EXP1["three_class.py\nExp 1: 3-class RF\nTimeSeriesSplit CV"]
-        EXP2["two_stage.py\nExp 2: Gate then Direction RF\nthreshold tuning per fold"]
-        EXP3["regime_two_stage.py\nExp 3: Gate then HMM then Direction RF\n2-state Gaussian HMM"]
-        RUN_ALL["run_all_stats.py\nBatch stats for all 9 models\nskip-existing flag\nfeatures_v2 cache"]
-    end
-
-    %% ── Configuration edges ────────────────────────────────────────────────
-    CFG_FILE --> CFG
-    CFG --> PIPE
-    CFG --> EXP1
-    CFG --> EXP2
-    CFG --> EXP3
-    CFG --> RUN_ALL
-
-    %% ── Production data flow ────────────────────────────────────────────────
-    RAW --> LOAD
-    LOAD --> FEAT
-    LOAD --> LABELS
-    FEAT --> SPLIT
-    LABELS --> SPLIT
-
-    SPLIT -->|X_train / y_train| BASE
-    SPLIT -->|X_train / y_train| RF
-    SPLIT -->|X_train / y_train| GBM
-    SPLIT -->|X_train / y_train| SVM_M
-    SPLIT -->|X_test / y_test| STATS
-    SPLIT -->|X_test / y_test| EVALUATE
-
-    %% ── Model storage and retrieval ─────────────────────────────────────────
-    BASE -->|save joblib| PROC
-    RF -->|save joblib| PROC
-    GBM -->|save joblib| PROC
-    SVM_M -->|save joblib| PROC
-    PROC -->|load joblib| PIPE
-
-    BASE -->|y_pred| STATS
-    RF -->|y_pred| STATS
-    GBM -->|y_pred| STATS
-    SVM_M -->|y_pred| STATS
-
-    STATS -->|StatsResult| DOCS
-    EVALUATE -->|markdown| DOCS
-
-    %% ── Orchestration edges ──────────────────────────────────────────────────
-    PIPE -->|train / predict| BASE
-    PIPE -->|train / predict| RF
-    PIPE -->|train / predict| GBM
-    PIPE -->|train / predict| SVM_M
-    PIPE -->|writes| PROC
-    GUI -->|calls run| PIPE
-    GUI -->|reads config| CFG_FILE
-    GUI -->|reads| PROC
-
-    %% ── Experiment data flow ─────────────────────────────────────────────────
-    LOAD --> FEAT2
-    FEAT2 -->|49 features| EXP1
-    FEAT2 -->|49 features| EXP2
-    FEAT2 -->|49 features| EXP3
-    LABELS --> EXP_LBL
-    EXP_LBL --> EXP1
-    EXP_LBL --> EXP2
-    EXP_LBL --> EXP3
-    EXP_MET --> EXP1
-    EXP_MET --> EXP2
-    EXP_MET --> EXP3
-
-    EXP1 -->|y_true + y_pred npz| PROC
-    EXP2 -->|y_true + y_pred npz| PROC
-    EXP3 -->|y_true + y_pred npz| PROC
-    EXP1 -->|last-fold joblib| PROC
-    EXP2 -->|last-fold joblibs| PROC
-    EXP3 -->|last-fold joblibs| PROC
-
-    RUN_ALL --> EXP1
-    RUN_ALL --> EXP2
-    RUN_ALL --> EXP3
-    PROC -->|load npz| RUN_ALL
-    RUN_ALL -->|StatsResult| STATS
-    STATS --> DOCS
-
-    %% ── Styles ───────────────────────────────────────────────────────────────
-    classDef store      fill:#254E70,stroke:#8EE3EF,color:#AEF3E7
-    classDef cfg        fill:#37718E,stroke:#8EE3EF,color:#AEF3E7
-    classDef model      fill:#37718E,stroke:#AEF3E7,color:#AEF3E7
-    classDef eval       fill:#254E70,stroke:#AEF3E7,color:#AEF3E7
-    classDef orch       fill:#7E4E60,stroke:#AEF3E7,color:#AEF3E7
-    classDef experiment fill:#1a3a50,stroke:#8EE3EF,color:#8EE3EF
-
-    class RAW,PROC,DOCS,CFG_FILE store
-    class CFG cfg
-    class BASE,RF,GBM,SVM_M model
-    class STATS,EVALUATE eval
-    class PIPE,GUI orch
-    class FEAT2,EXP_LBL,EXP_MET,EXP1,EXP2,EXP3,RUN_ALL experiment
+  ----------------------------------------------------------------------------
+  Non-negotiables (apply throughout):  seed = 42  |  no look-ahead (lags < t)
+  |  test set is sacred (fit/tune on TRAIN only)  |  persist y_true/y_pred .npz
+  ----------------------------------------------------------------------------
 ```
 
 ## Module inventory
 
-| Module | File | Purpose |
-|--------|------|---------|
-| `load_raw`, `validate` | `src/load.py` | Parse raw CSV, validate schema |
-| `split` | `src/split.py` | Time-ordered train/test split, configurable train_size |
-| `build_features` | `src/features.py` | 20-dim lagged OHLCV feature matrix |
-| `build_labels` | `src/labels.py` | Binary direction label (Close > Open) |
-| `load_config`, `model_params` | `src/config.py` | Read config.yaml |
-| `train`, `predict`, `save`, `load` | `src/models/baseline.py` | Logistic Regression |
-| `train`, `predict`, `save`, `load` | `src/models/rf.py` | Random Forest, 500 trees, OOB score |
-| `train`, `predict`, `save`, `load` | `src/models/gbm.py` | XGBoost classifier |
-| `train`, `predict`, `save`, `load` | `src/models/svm.py` | SVC with training-fit StandardScaler |
-| `run` | `src/pipeline.py` | End-to-end orchestrator with joblib caching |
-| `compute`, `format_markdown`, `write_results` | `src/statistics.py` | Standardised StatsResult evaluation |
-| `accuracy`, `recall`, `report` | `src/evaluate.py` | Legacy binary evaluation helpers |
-| Training tab, Prediction tab | `app.py` | Streamlit GUI |
-| `build_features_v2` | `src/experiments/features_v2.py` | 49-feature engineered matrix |
-| `three_class_labels`, `gate_labels`, `direction_labels` | `src/experiments/labels.py` | Multi-label factories |
-| `mcc`, `coverage`, `conditional_hit_rate` | `src/experiments/metrics.py` | Experiment-specific metrics |
-| `run` | `src/experiments/three_class.py` | Exp 1: 3-class RF + TSS CV |
-| `run` | `src/experiments/two_stage.py` | Exp 2: Gate + Direction RF cascade |
-| `run` | `src/experiments/regime_two_stage.py` | Exp 3: Gate + HMM + per-regime Direction RF |
-| `main` | `src/experiments/run_all_stats.py` | Batch stats for all 9 models |
+| Module / functions | File | Purpose |
+|--------------------|------|---------|
+| `load_config`, `model_params` | `src/config.py` | Read `config.yaml` (train_size, per-model hyperparameters). |
+| `load_raw`, `validate` | `src/load.py` | Parse raw CSV, validate schema/ordering. |
+| `build_features` | `src/features.py` | v1 — 20-dim lagged OHLCV feature matrix. |
+| `build_features_v2`, `load_or_build_features_v2` | `src/features_v2.py` | v2 — 49 features (OHLCV lags + VWAP-dev, tick-delta, RSI, MACD, vol, time-of-day); parquet cache. |
+| `build_features_v3`, `load_or_build_features_v3` | `src/features_v3.py` | v3 — 48 **stationary** features (base lags → `log(price / Close_{t-1})`, v2 indicators kept). |
+| `build_labels`, `flat_mask`, `move_series`, `direction_labels` | `src/labels.py` | Binary up/down label (Close > Open); flat-bar mask; signed move. |
+| `split` | `src/split.py` | 50/50 time-ordered train/test split (no shuffle). |
+| `train`, `predict`, `save`, `load` (+ `sample_weight`) | `src/models/{baseline,rf,gbm,svm}.py` | Logistic Regression, Random Forest, XGBoost, RBF-SVM (scaler fit on train only). |
+| `run`, `predict`, `load_bundle` | `src/models/regime_hmm.py`, `src/models/regime_binary.py` | 2-state Gaussian HMM regime + per-regime binary RF. |
+| `run` | `src/pipeline.py` | End-to-end driver for one production model (joblib cache + `training_metadata.json`). |
+| `run`, `_build_dataset` | `src/binary_suite.py` | Binary suite over feature-set × flat-toggle variants → `exp_*` artifacts. |
+| `build_selection_split`, `grid_search`, `tune_threshold`, `select_features`, `predict_with_threshold`, `run_tuning` | `src/tuning.py` | HPO/regularization on a **no-flat validation fold** carved from TRAIN; saves `tuned_{feat}_{algo}` models + thresholds. |
+| `compute`, `format_markdown`, `write_results`, `backtest`, `plot_equity_curve` | `src/statistics.py` | Standardised `StatsResult` metrics + backtest math (equity / drawdown / Sharpe). |
+| `run`, `run_one` | `src/backtest.py` | Simulate a model's signals into a compounding equity curve vs passive. |
+| `section_a/c/d`, `test_flat_mask`, `section_noflat_test` | `src/run_stats.py` | Batch stats for all model variants + the no-flat-test evaluation slice. |
+| `accuracy`, `recall`, `report`, `write_results` | `src/evaluate.py` | Legacy binary evaluation helpers. |
+| feature-importance helpers | `src/feature_importance.py` | Rank/print model feature importances. |
+| Training tab, Prediction tab | `app.py` | Streamlit GUI: train variants; predict (loads `data/processed/` models, applies tuned threshold; v1/v2/v3 + tuned/no-flat toggles). |
+

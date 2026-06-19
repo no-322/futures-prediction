@@ -13,6 +13,7 @@ def train(
     y: pd.Series,
     params: dict | None = None,
     save_path: Path | None = None,
+    sample_weight: np.ndarray | None = None,
 ) -> RandomForestClassifier:
     """Fit a Random Forest classifier on the training feature matrix.
 
@@ -25,6 +26,8 @@ def train(
         save_path: Where to persist the fitted model. Defaults to the canonical
             data/processed/rf_model.joblib; pass an alternate path to avoid
             overwriting the production artifact (e.g. the no-flat experiment).
+        sample_weight: Optional per-row training weights (e.g. |Close - Open| to
+            emphasise decisive bars). None gives the standard unweighted fit.
 
     Returns:
         Fitted RandomForestClassifier instance with oob_score_ attribute set.
@@ -43,7 +46,7 @@ def train(
         p.update(params)
     p["random_state"] = 42
     model = RandomForestClassifier(**p)
-    model.fit(X, y)
+    model.fit(X, y, sample_weight=sample_weight)
     save(model, save_path or _DEFAULT_PATH)
     return model
 

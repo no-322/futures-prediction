@@ -70,7 +70,21 @@ produce the same output type/shape for the step it replaces.
 
 **Pre-wired drivers** (already chain the above — call these, or swap a module they use):
 `pipeline.run(algo)` (steps 1–9 for one model) · `run_stats.main()` (batch stats →
-`docs/notes/*.md`) · `backtest.run(algo, transaction_cost)` (steps 1,3–4,8,10–12).
+`docs/notes/*.md`) · `backtest.run(algo, transaction_cost)` (steps 1,3–4,8,10–12) ·
+`tuning.run_tuning(cfg, …)` (model selection → `docs/notes/tuning_stats.md`).
+
+**Model-selection harness (`src.tuning`).** Optimises **no-flat test accuracy**
+while keeping the test set sacred: hyperparameters, threshold, and feature subset
+are chosen on a **no-flat validation fold carved from the training half**
+(`build_selection_split`, the last `val_frac` of train, time-ordered — every
+validation timestamp precedes the test-half start). Only the final retrained model
+touches the test set, once. Model `train()` functions accept an optional
+`sample_weight` (the harness uses `|Close − Open|` when `use_move_weight=True`).
+Artifacts: `tuned_{featset}_{algo}_predictions.npz` (`y_true, y_pred, move, keep`),
+`tuned_params_{featset}.json`, `selected_{featset}.json`. The Streamlit **Predict**
+tab can load these tuned models (a "Use tuned (regularized) model" checkbox, plus
+the v1/v2/**v3** feature radio) and applies the stored threshold via
+`tuning.predict_with_threshold`.
 
 ```mermaid
 flowchart LR

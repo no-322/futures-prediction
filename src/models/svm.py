@@ -48,6 +48,7 @@ def train(
     y: pd.Series,
     params: dict | None = None,
     save_path: Path | None = None,
+    sample_weight: np.ndarray | None = None,
 ) -> SVMModel:
     """Fit a StandardScaler and SVC on the training feature matrix.
 
@@ -64,6 +65,8 @@ def train(
         save_path: Where to persist the fitted model. Defaults to the canonical
             data/processed/svm_model.joblib; pass an alternate path to avoid
             overwriting the production artifact (e.g. the no-flat experiment).
+        sample_weight: Optional per-row training weights (e.g. |Close - Open| to
+            emphasise decisive bars). None gives the standard unweighted fit.
 
     Returns:
         SVMModel with keys 'scaler' (fitted StandardScaler) and 'clf' (fitted SVC).
@@ -83,7 +86,7 @@ def train(
     scaler: StandardScaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     clf = SVC(**p)
-    clf.fit(X_scaled, y)
+    clf.fit(X_scaled, y, sample_weight=sample_weight)
     model = SVMModel(scaler=scaler, clf=clf)
     save(model, save_path or _DEFAULT_PATH)
     return model
