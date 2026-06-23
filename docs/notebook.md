@@ -42,3 +42,10 @@ Created the GUI. I wanted to have an info button that shows if a trained model a
 ## 2026-06-12 - Friday
 
 I noticed that SVM not only takes time to train but also 3.5 hrs to predict 250k rows. On investigation I found that overtraining in SVM and random forest. SVM has nearly one support vector for every record. Similarly random forest is too deep. After dropping flat bars GBM is making a profit of 300+%. Logistic and GBM are the ones with least overfitting. But when we add a transaction cost of even 1bp this 300% doesn't persist. We get a drawdown of 100%. Adding regularization might help rf and svm. Current rf model goes 68-188 levels. Next step would be to introduce max_depth somewhere between 5-10. raise min_sample_leaf and use ccp_alpha for regularization.  
+
+## 2026-06-22 Monday
+
+I have added a walk-forward evaluation module. I know that there are better models present I want to better optimize my model. But if I were to train in-order to get better accuracy on test-set, I lose the "unseen" test set and I am essentially doing data-mining. So I have introduced the walk-forward module. I am using a rolling window for the training. The default is 3 mo train and 1 mo predict. Based on past experiment results that also match with [Interpretable Hypothess-Driven Trading](https://arxiv.org/html/2512.12924v1) I expect high volatility period accuracy to be better. 
+
+I am focusing on the top 5 models in the model leaderboard. After some EDA an interesting result that has come up is although the XGBoost tuned model is performing overall 2nd when I aggregate by winners the clear pattern is that logistic regression is leading in 14 windows followed by tuned logistic regression in 14 windows. XGB is performing best in 6, despite this it is the second best model overall. This could mean two things, based on regime analysis if I see a clear pattern on when tuned is beating logisitc regression I can write a pipleline that will use a mixture to get better accuracy or the other takeaway is that although XGB is not the best, it is an all-rounder.
+

@@ -29,6 +29,19 @@ Selection + I/O glue for backtesting saved binary models (math lives in `src.sta
 | `_reconstruct_test_bars` | `(cfg: dict) -> tuple[np.ndarray, np.ndarray]` | Rebuild the 50/50 `raw_test` slice → `(timestamps, bar_returns=(Close-Open)/Open)`. |
 | `_build_registry` | `() -> dict[str, str]` | Ordered map of backtestable binary prediction-set stems → display names. |
 
+## src.walkforward
+
+Rolling walk-forward validation — the iteration metric (see `.claude/skills/evaluation`). Fixed-width calendar windows stepped forward; fresh model per fold; reports per-fold accuracy **and** mean ± std.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `make_folds` | `(timestamps: pd.Series, train_months: int, test_months: int, step_months: int, purge=0, embargo=0) -> list[Fold]` | Build rolling calendar-time folds via `pd.DateOffset`: train `[t0, t0+train_months)`, test `[t0+train_months, +test_months)`, advancing `t0` by `step_months`. Asserts `timestamps` monotonic and per-fold `train_idx.max() < test_idx.min()`. Emits a fold only when both blocks are non-empty (drops partial tail). `purge` drops train rows nearest the boundary; `embargo` skips leading test rows. Returns `Fold` dataclasses (`train_idx`/`test_idx` int arrays + `train/test_start/end` Timestamps). |
+| `walk_forward` | `(X, y, timestamps, model_factory, *, config=None, train_months=None, test_months=None, step_months=None, purge=None, embargo=None, keep=None, include_flat=False, drop_flat_train=False, predict_fn=None, name="wf", save=True) -> WalkForwardResult` | Run walk-forward for one sklearn-style model. Window sizes resolve explicit kwargs → `config['walk_forward']` → skill defaults (3/1/1). Per fold: fresh `model_factory()`, `fit(X_tr,y_tr)`, `predict_fn(model,X_te)` or `predict(X_te)`, accuracy. With a `keep` non-flat mask, **default scores the no-flat test slice** (`include_flat=False`) and optionally drops flat rows from each train block (`drop_flat_train`). Persists `y_true/y_pred/fold_id/kept/accuracies/test_starts/test_ends` to `data/processed/walkforward_{name}_predictions.npz` (Rule 7). Returns mean/std/min/max + per-fold detail. |
+| `summarize` | `(result: WalkForwardResult) -> str` | Render `"X% ± y% across N folds (range a–b)"` headline plus a per-fold table (skill reporting convention). |
+| `sklearn_factory` | `(estimator_cls: type, params: dict) -> Callable[[], Any]` | Wrap an sklearn class + params into a zero-arg factory that builds a fresh instance per call with `random_state=42` injected. |
+| `module_factory` | `(module, params: dict, tmp_path: Path) -> Callable[[], Any]` | Factory yielding a fresh fit/predict/predict_proba adapter (`_ModuleEstimator`) that trains via a project model module (`src.models.{baseline,rf,gbm}`) — exact module defaults + `params` overlay + seed 42, fitting to `tmp_path` each fold. Lets walk-forward reproduce a production/tuned model's exact recipe. |
+| `project_factories` | `(config: dict) -> dict[str, Callable[[], Any]]` | Ready factories for `baseline/rf/gbm/svm` from `model_params(config, algo)`, seed 42. SVM factory returns `Pipeline(StandardScaler, SVC)` so scaling is fit **in-fold** (leakage rule). |
+
 ## src.load
 
 | Function | Signature | Description |
@@ -115,11 +128,12 @@ Selection + I/O glue for backtesting saved binary models (math lives in `src.sta
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `accuracy` | `(y_true: np.ndarray, y_pred: np.ndarray) -> float` | Fraction of correct predictions on the test set. |
-| `recall` | `(y_true: np.ndarray, y_pred: np.ndarray) -> float` | Recall for class 1 (up direction); `zero_division=0`. |
-| `confusion` | `(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray` | 2×2 confusion matrix `[[TN, FP], [FN, TP]]`. |
-| `report` | `(name: str, y_true: np.ndarray, y_pred: np.ndarray) -> str` | Format accuracy, recall, and confusion matrix for one model as a markdown section. |
-| `write_results` | `(reports: list[str], path: Path) -> None` | Write list of markdown report sections to `docs/results.md` (or any path). Creates parent dirs. |
+| `_select` | `(y_true, y_pred, keep: np.ndarray \| None, include_flat: bool) -> tuple[np.ndarray, np.ndarray]` | Restrict predictions to the non-flat rows (`keep` mask, True = `Close != Open`) unless `include_flat` or `keep is None`. Shared no-flat gate for the metric fns. |
+| `accuracy` | `(y_true, y_pred, keep=None, *, include_flat=False) -> float` | Fraction of correct predictions. **No-flat by default** when a `keep` mask is given; `include_flat=True` (or `keep=None`) scores the full set. |
+| `recall` | `(y_true, y_pred, keep=None, *, include_flat=False) -> float` | Recall for class 1 (up); `zero_division=0`. No-flat by default when `keep` is given. |
+| `confusion` | `(y_true, y_pred, keep=None, *, include_flat=False) -> np.ndarray` | 2×2 confusion matrix `[[TN, FP], [FN, TP]]` (`labels=[0,1]`). No-flat by default when `keep` is given. |
+| `report` | `(name: str, y_true, y_pred, keep=None, *, include_flat=False) -> str` | Format accuracy, recall, and confusion matrix as a markdown section, with a one-line note recording the slice (non-flat N bars vs full set). |
+| `write_results` | `(reports: list[str], path: Path, intro: str \| None = None) -> None` | Write markdown report sections to a file (default `docs/results.md`); optional `intro` overrides the default full-test header. Creates parent dirs. |
 
 ## src.models.regime_hmm
 
@@ -176,7 +190,11 @@ Binary HMM-regime direction model (Experiment 5): a Gaussian HMM detects 2 regim
 | `section_d` | `(cfg: dict, skip_existing: bool = False) -> None` | Additively train the two 49-feature binary variants (flat-included `exp_v2_*`, no-flat `exp_noflat_v2_*`) and write `docs/notes/binary_v2_stats.md` with per-label confusion-matrix metrics. Uses the cached v2 feature matrix; never touches the 20-feature artifacts or other reports. |
 | `test_flat_mask` | `(cfg: dict) -> np.ndarray` | Reconstruct the 50/50 test slice (`df.iloc[4:]` → split) and return the boolean "keep" mask (`True` where `Close != Open`), aligned 1-to-1 with every binary model's saved test predictions. |
 | `section_noflat_test` | `(cfg: dict) -> None` | No-flat-test evaluation slice: read every existing `{stem}_predictions.npz` (no retraining), drop flat (`Open == Close`) test rows via `test_flat_mask`, recompute stats, and write three sibling reports (`all_stats_noflat_test.md`, `binary_noflat_stats_noflat_test.md`, `binary_v2_stats_noflat_test.md`). Length-mismatched sets (3-class / two-stage) are skipped. |
-| `leaderboard` | `(cfg: dict) -> None` | Write `docs/notes/model_leaderboard.md`: one row per binary model (read from each `{stem}_predictions.npz`, no retraining) with no-flat test accuracy, full-test accuracy, and full-test MCC, sorted by no-flat accuracy then MCC. Non-binary / length-mismatched sets are excluded and listed. |
+| `rank_models` | `(cfg: dict) -> list[tuple[str, str, float, float, float]]` | Rank every saved binary prediction set best-first: `(stem, display_name, no_flat_acc, full_acc, full_mcc)`, sorted by no-flat accuracy then full-test MCC. Reads each `{stem}_predictions.npz` (no retraining); skips non-binary / length-mismatched sets. Shared by `leaderboard` and `walkforward_top5`. |
+| `leaderboard` | `(cfg: dict) -> None` | Write `docs/notes/model_leaderboard.md`: a 4-column table from `rank_models` (no-flat accuracy, full-test accuracy, full-test MCC), sorted by no-flat accuracy then MCC. Non-binary / length-mismatched sets are excluded and listed. |
+| `_top5_recipe` | `(stem: str, cfg: dict) -> dict` | Decode a leaderboard stem into a walk-forward training recipe: `{algo, featset, params, threshold}`. `exp_noflat_baseline` → config defaults, no threshold; `tuned_{featset}_{algo}` → reads `tuned_params_{featset}.json`. |
+| `walkforward_top5` | `(cfg: dict, k: int = 5, path: Path = _TOP5_EVAL_PATH) -> None` | Rolling walk-forward evaluation of the top-`k` `rank_models` entries: reconstruct each recipe (feature set, tuned params, no-flat training, stored threshold), retrain fresh per fold (3mo/1mo from config), report per-fold accuracy + mean±std on the no-flat test slice → `docs/notes/top5_evaluation.md`. Persists each model's per-fold predictions (Rule 7). |
+| `_featset_builder` | `(featset: str) -> Callable` | Return the feature-matrix builder for `'v1'`/`'v2'`/`'v3'` (`build_features` / `load_or_build_features_v2` / `load_or_build_features_v3`). |
 
 ## src.tuning
 

@@ -16,9 +16,13 @@ from src.run_stats import (
     _NFT_NOFLAT_REPORT_PATH,
     _NFT_REPORT_PATH,
     _NFT_V2_REPORT_PATH,
+    _TOP5_EVAL_PATH,
     _nft_stats,
+    _top5_recipe,
     leaderboard,
+    rank_models,
     section_noflat_test,
+    walkforward_top5,
 )
 # Aliased so pytest does not collect this `test_`-prefixed helper as a test.
 from src.run_stats import test_flat_mask as build_test_flat_mask
@@ -113,3 +117,44 @@ def test_leaderboard_writes_sorted(cfg: dict) -> None:
     ]
     assert len(nf_accs) > 1
     assert nf_accs == sorted(nf_accs, reverse=True)  # ordered by no-flat acc
+
+
+def test_rank_models_sorted_with_stems(cfg: dict) -> None:
+    if not (_PROC / "rf_predictions.npz").exists():
+        pytest.skip("production predictions not present")
+    rows = rank_models(cfg)
+    assert len(rows) > 1
+    for stem, name, nf_acc, acc, mcc in rows:
+        assert isinstance(stem, str) and (_PROC / f"{stem}_predictions.npz").exists()
+        assert isinstance(name, str)
+    # Sorted by (no-flat acc, full MCC) descending.
+    keys = [(r[2], r[4]) for r in rows]
+    assert keys == sorted(keys, reverse=True)
+
+
+def test_top5_recipe_decode(cfg: dict) -> None:
+    # exp_noflat_baseline → v1 baseline, no threshold.
+    r = _top5_recipe("exp_noflat_baseline", cfg)
+    assert r["algo"] == "baseline" and r["featset"] == "v1" and r["threshold"] is None
+    # tuned_{feat}_{algo} → reads tuned_params JSON (if present).
+    if (_PROC / "tuned_params_v3.json").exists():
+        r3 = _top5_recipe("tuned_v3_gbm", cfg)
+        assert r3["algo"] == "gbm" and r3["featset"] == "v3"
+        assert r3["params"] and isinstance(r3["threshold"], float)
+
+
+def test_walkforward_top5_writes_markdown(cfg: dict) -> None:
+    # Top-2 are both v1 logistic → cheap to retrain across folds.
+    if not (_PROC / "rf_predictions.npz").exists():
+        pytest.skip("production predictions not present")
+    walkforward_top5(cfg, k=2)
+    assert _TOP5_EVAL_PATH.exists()
+    text = _TOP5_EVAL_PATH.read_text()
+    assert "Walk-Forward Evaluation" in text
+    assert "no-flat test slice" in text.lower()
+    assert text.count("\n## #") == 2                      # two model sections
+    assert text.count("± ") >= 2                          # mean ± std headline each
+    assert "| Fold |" in text                             # per-fold table
+    # Per-fold predictions persisted (Rule 7).
+    top_stem = rank_models(cfg)[0][0]
+    assert (_PROC / f"walkforward_top5_{top_stem}_predictions.npz").exists()

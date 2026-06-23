@@ -608,3 +608,68 @@ continue
 ## 2026-06-19 23:05:20
 
 push to main going forward. Integrate-binary doesnt make sense to me anymore. commit and push
+
+---
+## 2026-06-19 23:21:30
+
+Remind me exactly what we implemented in v3. How did we regularize and what we mean by stationarity transformed the models
+
+---
+## 2026-06-23 03:07:07
+
+What skills can you read now?
+
+---
+## 2026-06-23 03:07:28
+
+Build the walk-forward validation module per the evaluation skill. Rolling window, train/test sizes from config (3mo/1mo). Take any sklearn-style model, return per-fold accuracy plus mean ± std.
+
+---
+## 2026-06-23 03:07:38
+
+Build the walk-forward validation module per the evaluation skill. Rolling window, train/test sizes from config (3mo/1mo). Take any sklearn-style model, return per-fold accuracy plus mean ± std.
+
+---
+## 2026-06-23 03:14:06
+
+I am thinking we will strictly maintain the annual quarters ie Jan- March April-June and so on to check if business cycles play a role too
+
+---
+## 2026-06-23 03:20:01
+
+Maintain original scheme
+
+---
+## 2026-06-23 03:42:00
+
+Check the background pytest run b1rl22gxr and report the final walk-forward module results.
+
+---
+## 2026-06-23 03:47:00
+
+Check the background pytest run b1rl22gxr and report the final walk-forward module results.
+
+---
+## 2026-06-23 12:22:06
+
+run evaluate module for the top 5 models in Model leaderboard and save it as a markdown file
+
+---
+## 2026-06-23 12:51:34
+
+I meant the walk-forward evaluation.  Rewrite top5_evaluation.md with results from walkforward evaluation on the top 5 models from the leaderboard
+
+---
+## 2026-06-23 13:44:28
+
+use top5_evaluation.md results and create a scatterplot in eda.ipynb. Draw all the results in the same graph using different colors for different models and mark each fold as well with vertical lines
+
+---
+## 2026-06-23 13:55:12
+
+Add a table showing how many windows each model performed the best. The model is considered the best if its accuracy is the highest in the window
+
+---
+## 2026-06-23 14:14:08
+
+commit all changes and push

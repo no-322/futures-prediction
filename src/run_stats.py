@@ -12,25 +12,40 @@ Section D — 49-feature binary suites (flat-included + no-flat):
   Train both variants on the cached features_v2 matrix; write
   docs/notes/binary_v2_stats.md.
 
+Section LB — Model leaderboard:
+  Rank every saved binary prediction set by no-flat test accuracy then full-test
+  MCC; write docs/notes/model_leaderboard.md.
+
+Section TOP5 — Top-5 walk-forward evaluation:
+  Reconstruct each top-5 leaderboard model's recipe (feature set, tuned params, no-flat
+  training, stored threshold) and run the rolling walk-forward harness, retraining per
+  fold; report per-fold accuracy + mean±std on the no-flat test slice; write
+  docs/notes/top5_evaluation.md.
+
 The 3-class / gated-cascade experiments are not part of this driver (they live on
 the experimentation branch).
 
 Run with:
-    python -m src.run_stats                       # all sections
+    python -m src.run_stats                       # sections a c d
     python -m src.run_stats --sections a          # production only
     python -m src.run_stats --sections c d --skip-existing
+    python -m src.run_stats --sections top5       # evaluate top-5 (reads existing .npz)
 """
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
+import pandas as pd
 
+import src.evaluate as evaluate
 import src.statistics as statistics
-from src.config import load_config
+from src.config import load_config, model_params
 from src.features_v2 import load_or_build_features_v2
-from src.labels import flat_mask
+from src.labels import build_labels, flat_mask
 from src.load import load_raw
 from src.pipeline import _build_dataset
 from src.split import split
@@ -58,6 +73,8 @@ _NFT_NOFLAT_REPORT_PATH = Path("docs/notes/binary_noflat_stats_noflat_test.md")
 _NFT_V2_REPORT_PATH = Path("docs/notes/binary_v2_stats_noflat_test.md")
 
 _LEADERBOARD_PATH = Path("docs/notes/model_leaderboard.md")
+_TOP5_EVAL_PATH = Path("docs/notes/top5_evaluation.md")
+_PROC = Path("data/processed")
 
 _REGIME_LABELS = {0: "low-vol / calm", 1: "high-vol / active"}
 
@@ -376,40 +393,65 @@ def _leaderboard_name(stem: str, registry: dict[str, str]) -> str:
     return stem
 
 
-def leaderboard(cfg: dict) -> None:
-    """Write docs/notes/model_leaderboard.md comparing every binary model.
+def rank_models(cfg: dict) -> list[tuple[str, str, float, float, float]]:
+    """Rank every saved binary prediction set, best first.
 
-    Reads each data/processed/{stem}_predictions.npz (no retraining), computes
-    full-test accuracy + MCC and no-flat test accuracy (Open==Close bars dropped
-    from evaluation only), and writes a 4-column table sorted by no-flat accuracy
-    then full-test MCC. Non-binary sets (3-class / two-stage / regime_v2, which
-    have a different length) are skipped and listed.
+    Reads each data/processed/{stem}_predictions.npz (no retraining) and computes
+    no-flat test accuracy (Open==Close bars dropped from evaluation only), full-test
+    accuracy, and full-test MCC. Rows are sorted by (no-flat accuracy, full-test MCC)
+    descending — the same key the leaderboard uses. Non-binary / different-length sets
+    (3-class, two-stage, regime_v2, the concatenated walk-forward set) are skipped.
+
+    Args:
+        cfg: Parsed config dict (used to rebuild the no-flat test mask).
+
+    Returns:
+        List of (stem, display_name, no_flat_acc, full_acc, full_mcc), best first.
     """
     from src import backtest
 
     keep = test_flat_mask(cfg)
-    n_keep, n_total = int(keep.sum()), int(keep.size)
+    n_total = int(keep.size)
     registry = backtest._build_registry()
     proc = Path("data/processed")
 
-    rows: list[tuple[str, float, float, float]] = []
-    skipped: list[str] = []
+    rows: list[tuple[str, str, float, float, float]] = []
     for npz in sorted(proc.glob("*_predictions.npz")):
         stem = npz.name[: -len("_predictions.npz")]
         if stem.startswith("backtest_"):
             continue
         d = np.load(npz)
         if "y_pred" not in d or "y_true" not in d or len(d["y_pred"]) != n_total:
-            skipped.append(stem)
             continue
         yt, yp = d["y_true"], d["y_pred"]
         full = statistics.compute(yt, yp)
         nf_acc = statistics.compute(yt[keep], yp[keep])["accuracy"]
-        rows.append((_leaderboard_name(stem, registry), nf_acc,
+        rows.append((stem, _leaderboard_name(stem, registry), nf_acc,
                      full["accuracy"], full["mcc"]))
 
     # Sort by no-flat accuracy, then full-test MCC (both descending).
-    rows.sort(key=lambda r: (r[1], r[3]), reverse=True)
+    rows.sort(key=lambda r: (r[2], r[4]), reverse=True)
+    return rows
+
+
+def leaderboard(cfg: dict) -> None:
+    """Write docs/notes/model_leaderboard.md comparing every binary model.
+
+    Thin formatter over rank_models(): emits a 4-column table sorted by no-flat
+    accuracy then full-test MCC. Non-binary sets (3-class / two-stage / regime_v2,
+    which have a different length) are skipped by rank_models and listed here.
+    """
+    keep = test_flat_mask(cfg)
+    n_keep, n_total = int(keep.sum()), int(keep.size)
+
+    rows = rank_models(cfg)
+    ranked_stems = {r[0] for r in rows}
+    skipped = [
+        npz.name[: -len("_predictions.npz")]
+        for npz in sorted(Path("data/processed").glob("*_predictions.npz"))
+        if not npz.name.startswith("backtest_")
+        and npz.name[: -len("_predictions.npz")] not in ranked_stems
+    ]
 
     lines = [
         "# Model Leaderboard\n\n",
@@ -426,12 +468,149 @@ def leaderboard(cfg: dict) -> None:
         "\n| Model | No-flat test acc | Accuracy | MCC |\n",
         "|-------|------------------|----------|-----|\n",
     ]
-    for name, nf_acc, acc, mcc in rows:
+    for _stem, name, nf_acc, acc, mcc in rows:
         lines.append(f"| {name} | {nf_acc:.4f} | {acc:.4f} | {mcc:.4f} |\n")
 
     _LEADERBOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
     _LEADERBOARD_PATH.write_text("".join(lines))
     print(f"Leaderboard ({len(rows)} models) → {_LEADERBOARD_PATH}")
+
+
+def _featset_builder(featset: str) -> "Callable":
+    """Return the feature-matrix builder for a feature-set key ('v1'/'v2'/'v3')."""
+    if featset == "v1":
+        from src.features import build_features
+        return build_features
+    if featset == "v2":
+        from src.features_v2 import load_or_build_features_v2
+        return load_or_build_features_v2
+    if featset == "v3":
+        from src.features_v3 import load_or_build_features_v3
+        return load_or_build_features_v3
+    raise ValueError(f"Unknown featset: {featset!r}")
+
+
+def _top5_recipe(stem: str, cfg: dict) -> dict:
+    """Decode a leaderboard stem into a walk-forward training recipe.
+
+    Maps a saved prediction-set stem to everything needed to retrain it per fold:
+    algorithm, feature set, hyperparameters, and (for tuned models) the stored
+    decision threshold. ``exp_noflat_baseline`` uses config defaults and no threshold;
+    ``tuned_{featset}_{algo}`` reads ``data/processed/tuned_params_{featset}.json``.
+
+    Args:
+        stem: Prediction-set stem from the leaderboard (e.g. ``tuned_v3_gbm``).
+        cfg: Parsed config dict (for baseline default hyperparameters).
+
+    Returns:
+        Dict with keys: ``algo``, ``featset``, ``params`` (dict), ``threshold``
+        (float or None).
+
+    Raises:
+        ValueError: If the stem is not a recognised top-model recipe.
+    """
+    if stem == "exp_noflat_baseline":
+        return {"algo": "baseline", "featset": "v1",
+                "params": model_params(cfg, "baseline"), "threshold": None}
+    if stem.startswith("tuned_"):
+        _, featset, algo = stem.split("_", 2)
+        spec = json.loads(
+            Path(f"data/processed/tuned_params_{featset}.json").read_text()
+        )
+        entry = spec["models"][algo]
+        thr = entry.get("threshold") if spec.get("tune_threshold") else None
+        return {"algo": algo, "featset": featset,
+                "params": dict(entry["params"]), "threshold": thr}
+    raise ValueError(f"No walk-forward recipe for stem {stem!r}")
+
+
+def walkforward_top5(cfg: dict, k: int = 5, path: Path = _TOP5_EVAL_PATH) -> None:
+    """Rolling walk-forward evaluation of the top-k leaderboard models → markdown.
+
+    Reconstructs each top model's recipe (feature set, tuned hyperparameters, no-flat
+    training, stored decision threshold) and retrains it fresh per walk-forward fold
+    (rolling 3mo-train / 1mo-test from config), reporting per-fold accuracy + mean ± std
+    on the **no-flat test slice** (the default). Writes ``docs/notes/top5_evaluation.md``
+    and persists each model's per-fold predictions (Rule 7).
+
+    Args:
+        cfg: Parsed config dict.
+        k: Number of top models to evaluate (default 5).
+        path: Destination markdown file.
+    """
+    import src.walkforward as walkforward
+    from src.models import baseline as m_baseline
+    from src.models import gbm as m_gbm
+    from src.models import rf as m_rf
+
+    modules = {"baseline": m_baseline, "rf": m_rf, "gbm": m_gbm}
+
+    df = load_raw(Path(cfg["data"]["path"]))
+    raw_align = df.iloc[4:].reset_index(drop=True)
+    y = build_labels(raw_align)
+    timestamps = raw_align["Date and Time"].reset_index(drop=True)
+    keep = ~flat_mask(raw_align)                       # full-series non-flat mask
+    n_keep, n_total = int(keep.sum()), int(keep.size)
+
+    ranked = rank_models(cfg)[:k]
+    feat_cache: dict[str, "pd.DataFrame"] = {}
+    tmp = _PROC / "_walkforward_tmp" / "model.joblib"
+
+    sections: list[str] = []
+    for rank, (stem, name, nf_acc, _acc, _mcc) in enumerate(ranked, start=1):
+        recipe = _top5_recipe(stem, cfg)
+        featset = recipe["featset"]
+        X = feat_cache.get(featset)
+        if X is None:
+            X = _featset_builder(featset)(df)
+            feat_cache[featset] = X
+
+        thr = recipe["threshold"]
+        predict_fn = None
+        if thr is not None:
+            predict_fn = (lambda thr: (
+                lambda model, Xte: (model.predict_proba(Xte)[:, 1] >= thr).astype(int)
+            ))(thr)
+
+        factory = walkforward.module_factory(
+            modules[recipe["algo"]], recipe["params"], tmp
+        )
+        print(f"  #{rank} {name} — walk-forward (featset={featset}, "
+              f"thr={thr if thr is not None else 0.5})")
+        res = walkforward.walk_forward(
+            X, y, timestamps, factory,
+            config=cfg, keep=keep, drop_flat_train=True, predict_fn=predict_fn,
+            name=f"top5_{stem}",
+        )
+        headline = (
+            f"## #{rank} {name}\n\n"
+            f"Walk-forward no-flat accuracy: **{res['mean_accuracy'] * 100:.1f}% "
+            f"± {res['std_accuracy'] * 100:.1f}%** across {res['n_folds']} folds "
+            f"(range {res['min_accuracy'] * 100:.1f}–{res['max_accuracy'] * 100:.1f}%). "
+            f"Recipe: {recipe['algo']} on {featset}, no-flat training, "
+            f"threshold {thr if thr is not None else 0.5:.4f}. "
+            f"Single-split leaderboard no-flat acc: {nf_acc:.4f}.\n\n"
+        )
+        # summarize() emits its own "## Walk-forward — name" heading + table; keep the
+        # per-fold table only (drop its heading) under our richer headline.
+        table = walkforward.summarize(res).split("\n", 2)[2].split("\n\n", 1)[1]
+        sections.append(headline + table)
+
+    intro = (
+        "# Top-5 Models — Walk-Forward Evaluation\n\n"
+        f"The top {len(sections)} models from the **Model Leaderboard** "
+        "(`docs/notes/model_leaderboard.md`), each retrained fresh per **rolling "
+        "walk-forward** fold (3-month train / 1-month test, stepped 1 month, from "
+        "`config.yaml`). Each model keeps its recipe: feature set, tuned "
+        "hyperparameters, no-flat training, and stored decision threshold. Per-fold "
+        "accuracy is on the **no-flat test slice** (flat `Close == Open` bars excluded "
+        f"from scoring; {n_keep:,} of {n_total:,} bars are non-flat overall). The "
+        "between-fold spread is the regime signal; compare the walk-forward mean to "
+        "each model's single-split leaderboard no-flat accuracy.\n\n"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(intro + "\n---\n\n".join(sections) + "\n")
+    print(f"Walk-forward top-{len(sections)} → {path}")
 
 
 def main() -> None:
@@ -441,12 +620,14 @@ def main() -> None:
         help="Skip suites whose .npz predictions already exist",
     )
     parser.add_argument(
-        "--sections", nargs="+", choices=["a", "c", "d", "nft", "lb"],
+        "--sections", nargs="+", choices=["a", "c", "d", "nft", "lb", "top5"],
         default=["a", "c", "d"],
         help="Which sections to run (a=production, c=no-flat 20-feat + HMM, "
              "d=49-feature binary suites, nft=no-flat-test slice stats, "
-             "lb=model_leaderboard.md across all saved prediction sets — "
-             "reads existing .npz, no retraining, so run a/c/d first). Default: a c d.",
+             "lb=model_leaderboard.md across all saved prediction sets, "
+             "top5=walk-forward evaluation of the top-5 leaderboard models (retrains "
+             "per fold). The lb/nft sections read existing .npz (no retraining), so run "
+             "a/c/d first. Default: a c d.",
     )
     args = parser.parse_args()
 
@@ -465,6 +646,8 @@ def main() -> None:
         section_noflat_test(cfg)
     if "lb" in args.sections:
         leaderboard(cfg)
+    if "top5" in args.sections:
+        walkforward_top5(cfg)
 
 
 if __name__ == "__main__":

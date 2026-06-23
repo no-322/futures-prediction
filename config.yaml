@@ -10,6 +10,15 @@ data:
   path: data/raw/data.csv
   train_size: 0.5        # fraction of rows used for training (time-ordered)
 
+# Rolling walk-forward validation (the iteration metric — see .claude/skills/evaluation).
+# Fixed-width calendar windows stepped forward; never hardcoded in code.
+walk_forward:
+  train_months: 3        # train-block width in calendar months
+  test_months: 1         # test-block width in calendar months
+  step_months: 1         # window advance; = test_months → non-overlapping test blocks
+  purge: 0               # train rows dropped at the boundary (inert for single-bar label)
+  embargo: 0             # test rows skipped after the train block (adjacent-boundary guard)
+
 models:
   baseline:
     max_iter: 1000

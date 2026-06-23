@@ -4,7 +4,7 @@ Every binary up/down model on the 50/50 time-ordered test set, compared in one p
 
 - *No-flat test accuracy*: accuracy on the 140,613 of 275,759 test bars where `Close != Open` (flat bars dropped from evaluation only).
 - *Accuracy* and *MCC*: computed on the full test set.
-- Excluded (non-binary / different length): `exp_regime_v2`, `exp_three_class_v1`, `exp_three_class_v2`, `exp_two_stage_v1`, `exp_two_stage_v2`.
+- Excluded (non-binary / different length): `exp_regime_v2`, `exp_three_class_v1`, `exp_three_class_v2`, `exp_two_stage_v1`, `exp_two_stage_v2`, `walkforward_baseline_v1`, `walkforward_top5_exp_noflat_baseline`, `walkforward_top5_tuned_v1_baseline`.
 
 | Model | No-flat test acc | Accuracy | MCC |
 |-------|------------------|----------|-----|
