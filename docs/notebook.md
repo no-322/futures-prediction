@@ -47,5 +47,15 @@ I noticed that SVM not only takes time to train but also 3.5 hrs to predict 250k
 
 I have added a walk-forward evaluation module. I know that there are better models present I want to better optimize my model. But if I were to train in-order to get better accuracy on test-set, I lose the "unseen" test set and I am essentially doing data-mining. So I have introduced the walk-forward module. I am using a rolling window for the training. The default is 3 mo train and 1 mo predict. Based on past experiment results that also match with [Interpretable Hypothess-Driven Trading](https://arxiv.org/html/2512.12924v1) I expect high volatility period accuracy to be better. 
 
-I am focusing on the top 5 models in the model leaderboard. After some EDA an interesting result that has come up is although the XGBoost tuned model is performing overall 2nd when I aggregate by winners the clear pattern is that logistic regression is leading in 14 windows followed by tuned logistic regression in 14 windows. XGB is performing best in 6, despite this it is the second best model overall. This could mean two things, based on regime analysis if I see a clear pattern on when tuned is beating logisitc regression I can write a pipleline that will use a mixture to get better accuracy or the other takeaway is that although XGB is not the best, it is an all-rounder.
+I am focusing on the top 5 models in the model leaderboard. After some EDA an interesting result that has come up is that both logistic regressions placed 1st and 2nd in the leaderboard are individual winners in 14 windows each out of a total 36 windows. This could mean  based on regime analysis if I see a clear pattern on when tuned is beating logisitc regression I can write a pipleline that will use a mixture to get better accuracy.
+
+## 2026-06-23 Tuesday
+
+Today I am focusing on orderbook related features. I already implemented VWAP imbalance (VWAP/Close - 1). Now I added volume z-score and signed volume to signify direction based on close> open.
+
+The results showed that it helped the non-linear model but linear-models performed worse. After normalizing volume and since signed volume can not be normalized I had to divide by rolling history of volume for every fold (Normalization removes established polarity) it affected the linear models to a lesser extent but it still ended up damaging them
+
+## 2026-06-25 Thursday
+
+
 

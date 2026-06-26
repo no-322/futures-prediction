@@ -673,3 +673,76 @@ Add a table showing how many windows each model performed the best. The model is
 ## 2026-06-23 14:14:08
 
 commit all changes and push
+
+---
+## 2026-06-23 16:06:01
+
+Add a microstructure subsection in eda.ipynb. The entire point is to verify sanity of columns. Upticks + Downticks + sameticks should be equal to tickcount. If it is not find how much it varies by. Check for 0s or NaN in those columns. Check if VWAP for all columns lie between low and high. Check if tickcount == 0 anywhere
+
+---
+## 2026-06-23 18:37:59
+
+Create features_orderflow.py and its matching test in tests/. Add these features, computed on the dense 1-min grid:
+
+Normalized volume: rolling z-score of Volume over a trailing 60-bar window (causal — trailing only).
+Signed volume: Volume × sign(Close − Open) — positive if Close > Open, negative if Close < Open, 0 if equal.
+Cumulative tick_delta: rolling-window sum (not an expanding cumsum) of tick_delta over trailing windows of 5, 10, and 15 bars — three features.
+
+Lag every one of the above by t-1, t-2, t-3, and t-4, and include ONLY the lagged columns. Never include the lag-0 (current-bar) version of any feature — in particular signed_volume, whose lag-0 sign equals the label. Nothing from the current record may enter any feature.
+Write the test to assert: no NaN/inf leakage beyond the expected leading rows, and — the key one — that no feature value at row t changes when bar t's own OHLC/Volume/tick data is perturbed (i.e. features depend only on bars ≤ t-1).
+Then run the walk-forward harness on the top 5 models in the leaderboard after adding features from features_orderflow. Add the performance to top5_evaluation.md
+
+---
+## 2026-06-23 21:42:53
+
+Based on the reasoning that linear methods are getting affected by the scale I want you to modify the pipeline for linear models- all versions of logistic regression. rolling z-score will be done by rolling/ causal z-score insdie the feature (using only its trailing window).  For the signs standardization  harms the underlying information. We will handle that by dividing by rolling-mean  volume
+
+---
+## 2026-06-25 16:18:04
+
+Today's task is to fix the regime models. Currently we use HMM and viterbi algorithm to classify as risk-on or risk-off but this adds look-ahead bias. Let us fix this first. Instead of a smoothing algorithm lets use a filtering one. Regime is to be assigned only based on data up until time t ie for record t the last record that can be used to assign risk is record belonging to t-1. Next step is to implement two varieties of HMM based algorithms. 1. HMM predicted state becomes an added feature along with everything else. 2. HMM becomes a gate. Trade only during high risk period ie volatile markets. Both the algorithms are to be implemented to the top 5 models in the leaderboard
+
+---
+## 2026-06-25 18:58:17
+
+Lets update the leaderboard. Since Non-linear models work better with both HMM and features_orderflow train non-linear models with both at the same time. For linear models, lets just consider the two HMM variations and update the model_leaderboard.md
+
+---
+## 2026-06-25 19:29:19
+
+Lets update the leaderboard. Since Non-linear models work better with both HMM and features_orderflow train non-linear models with both at the same time. For linear models, lets just consider the two
+
+---
+## 2026-06-25 19:35:52
+
+I need you to help me bring back the claude that had all the context. It is running a shell in background already
+
+---
+## 2026-06-25 19:42:10
+
+claude --resume
+
+---
+## 2026-06-25 19:42:34
+
+claude --resume 17247029-cea9-4501-8b5e-831961a6c3c1
+
+---
+## 2026-06-25 19:45:26
+
+Add the top 5 models with option of HMM and orderflow in the GUI, I also want to check backtest results as well.
+
+---
+## 2026-06-26 02:25:51
+
+abort
+
+---
+## 2026-06-26 02:27:19
+
+can you do a quick drawdown and profit calculation for HMM gate logistic regression model. Assume transaction cost is 1bp
+
+---
+## 2026-06-26 20:28:06
+
+commit and push all changes

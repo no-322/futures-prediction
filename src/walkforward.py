@@ -218,6 +218,10 @@ def walk_forward(
     include_flat: bool = False,
     drop_flat_train: bool = False,
     predict_fn: Callable[[Any, pd.DataFrame], np.ndarray] | None = None,
+    fold_transform: Callable[
+        [np.ndarray, np.ndarray],
+        tuple[pd.DataFrame, pd.DataFrame, np.ndarray | None],
+    ] | None = None,
     name: str = "wf",
     save: bool = True,
 ) -> WalkForwardResult:
@@ -256,6 +260,15 @@ def walk_forward(
             fold's train block before fitting (default: train on the full block).
         predict_fn: Optional ``(model, X) -> labels`` override (e.g. to apply a decision
             threshold via ``predict_proba``); defaults to ``model.predict``.
+        fold_transform: Optional per-fold hook ``(full_train_idx, test_idx) ->
+            (X_tr_full, X_te, test_gate)``. Called once per fold **before**
+            ``drop_flat_train`` subsetting, so anything fit inside it (e.g. a per-fold
+            HMM regime model) sees the train block only — the leakage rule. ``X_tr_full``
+            is row-aligned to ``full_train_idx`` (the pre-flat-drop train block) and
+            ``X_te`` to ``test_idx``; both may carry extra columns (e.g. an appended
+            regime posterior). ``test_gate`` is an optional boolean over ``test_idx``
+            AND-ed into the scoring mask (e.g. trade only high-vol bars); pass None for
+            no gate. When None, the fold uses ``X`` directly (back-compatible).
         name: Short tag used in the report and the persisted npz filename.
         save: If True, write predictions to
             ``data/processed/walkforward_{name}_predictions.npz``.
@@ -296,14 +309,29 @@ def walk_forward(
     y_pred_all: list[np.ndarray] = []
     fold_id_all: list[np.ndarray] = []
     kept_all: list[np.ndarray] = []
+    scored_all: list[np.ndarray] = []
     accuracies: list[float] = []
 
     for i, fold in enumerate(folds):
-        train_idx = fold.train_idx
+        full_train_idx = fold.train_idx
+        test_idx = fold.test_idx
+
+        # Per-fold transform (e.g. fit a fresh HMM on the train block, append a regime
+        # column, and/or produce a scoring gate). Runs before drop_flat_train subsetting.
+        if fold_transform is not None:
+            X_tr_full, X_te, test_gate = fold_transform(full_train_idx, test_idx)
+        else:
+            X_tr_full, X_te, test_gate = (
+                X.iloc[full_train_idx], X.iloc[test_idx], None,
+            )
+
+        # drop_flat_train subsets the (full) train block before fitting.
         if drop_flat_train and keep is not None:
-            train_idx = train_idx[keep[train_idx]]
-        X_tr, y_tr = X.iloc[train_idx], y.iloc[train_idx]
-        X_te, y_te = X.iloc[fold.test_idx], y.iloc[fold.test_idx]
+            sub = keep[full_train_idx]
+            X_tr = X_tr_full.iloc[sub]
+            y_tr = y.iloc[full_train_idx[sub]]
+        else:
+            X_tr, y_tr = X_tr_full, y.iloc[full_train_idx]
 
         model = model_factory()                       # fresh per fold
         model.fit(X_tr, y_tr)
@@ -311,23 +339,34 @@ def walk_forward(
             y_hat = np.asarray(predict_fn(model, X_te))
         else:
             y_hat = np.asarray(model.predict(X_te))
-        y_te_arr = y_te.to_numpy()
+        y_te_arr = y.iloc[test_idx].to_numpy()
 
-        # No-flat test scoring (default when keep given and include_flat is False).
+        # Eligible test rows (non-flat by default); a fold_transform gate narrows further.
         test_keep = (
-            keep[fold.test_idx] if keep is not None
+            keep[test_idx] if keep is not None
             else np.ones(y_te_arr.shape, dtype=bool)
         )
-        score_mask = (
+        eligible_mask = (
             np.ones(y_te_arr.shape, dtype=bool) if include_flat else test_keep
         )
-        acc = float(accuracy_score(y_te_arr[score_mask], y_hat[score_mask]))
+        if test_gate is not None:
+            score_mask = eligible_mask & np.asarray(test_gate, dtype=bool)
+        else:
+            score_mask = eligible_mask
+
+        n_scored = int(score_mask.sum())
+        n_eligible = int(eligible_mask.sum())
+        acc = (
+            float(accuracy_score(y_te_arr[score_mask], y_hat[score_mask]))
+            if n_scored else float("nan")
+        )
 
         accuracies.append(acc)
         y_true_all.append(y_te_arr)
         y_pred_all.append(y_hat)
         fold_id_all.append(np.full(y_te_arr.shape, i, dtype=int))
         kept_all.append(test_keep)
+        scored_all.append(score_mask)
         per_fold.append(
             {
                 "fold": i,
@@ -336,8 +375,10 @@ def walk_forward(
                 "train_end": fold.train_end.isoformat(),
                 "test_start": fold.test_start.isoformat(),
                 "test_end": fold.test_end.isoformat(),
-                "n_train": int(train_idx.size),
-                "n_test": int(score_mask.sum()),
+                "n_train": int(len(X_tr)),
+                "n_test": n_scored,
+                "n_eligible": n_eligible,
+                "coverage": (n_scored / n_eligible) if n_eligible else float("nan"),
             }
         )
 
@@ -352,6 +393,7 @@ def walk_forward(
             y_pred=np.concatenate(y_pred_all),
             fold_id=np.concatenate(fold_id_all),
             kept=np.concatenate(kept_all),
+            scored=np.concatenate(scored_all),
             accuracies=accs,
             test_starts=np.array([f["test_start"] for f in per_fold]),
             test_ends=np.array([f["test_end"] for f in per_fold]),
@@ -360,10 +402,10 @@ def walk_forward(
     return WalkForwardResult(
         name=name,
         n_folds=len(folds),
-        mean_accuracy=float(accs.mean()),
-        std_accuracy=float(accs.std()),
-        min_accuracy=float(accs.min()),
-        max_accuracy=float(accs.max()),
+        mean_accuracy=float(np.nanmean(accs)),
+        std_accuracy=float(np.nanstd(accs)),
+        min_accuracy=float(np.nanmin(accs)),
+        max_accuracy=float(np.nanmax(accs)),
         per_fold=per_fold,
         npz_path=npz_path,
     )

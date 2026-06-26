@@ -17,7 +17,9 @@ from src.run_stats import (
     _NFT_REPORT_PATH,
     _NFT_V2_REPORT_PATH,
     _TOP5_EVAL_PATH,
+    _leaderboard_name,
     _nft_stats,
+    _score_predset,
     _top5_recipe,
     leaderboard,
     rank_models,
@@ -141,6 +143,38 @@ def test_top5_recipe_decode(cfg: dict) -> None:
         r3 = _top5_recipe("tuned_v3_gbm", cfg)
         assert r3["algo"] == "gbm" and r3["featset"] == "v3"
         assert r3["params"] and isinstance(r3["threshold"], float)
+
+
+def test_leaderboard_name_decodes_ss_variants() -> None:
+    # Linear HMM variants decode off the base registry name; non-linear off tuned_.
+    reg = {"exp_noflat_baseline": "Logistic Regression (no-flat)"}
+    assert (_leaderboard_name("ss_hmmfeat_exp_noflat_baseline", reg)
+            == "Logistic Regression (no-flat) + HMM regime feature")
+    assert (_leaderboard_name("ss_hmmgate_exp_noflat_baseline", reg)
+            == "Logistic Regression (no-flat) + HMM gate (high-vol)")
+    assert (_leaderboard_name("ss_offeat_tuned_v3_gbm", {})
+            == "Gradient Boosting (XGBoost) (tuned, v3) + order-flow + regime feature")
+    assert (_leaderboard_name("ss_ofgate_tuned_v3_rf", {})
+            == "Random Forest (tuned, v3) + order-flow + HMM gate")
+
+
+def test_score_predset_plain_vs_gated() -> None:
+    keep = np.array([True, True, False, True, True])      # row 2 is flat
+    yt = np.array([1, 0, 1, 1, 0])
+    yp = np.array([1, 1, 1, 0, 0])
+
+    # Plain: no-flat acc over keep rows {0,1,3,4} = 2/4; coverage None.
+    nf, full, mcc, cov = _score_predset({"y_true": yt, "y_pred": yp}, keep)
+    assert nf == pytest.approx(0.5)
+    assert cov is None
+
+    # Gated: score only traded high-vol bars; coverage = traded non-flat / non-flat.
+    gate = np.array([True, False, True, True, False])     # high-vol rows
+    nf_g, full_g, mcc_g, cov_g = _score_predset(
+        {"y_true": yt, "y_pred": yp, "gate": gate}, keep)
+    # keep & gate = rows {0,3}: yt[1,1] vs yp[1,0] → 1/2.
+    assert nf_g == pytest.approx(0.5)
+    assert cov_g == pytest.approx(2 / 4)                  # 2 traded of 4 non-flat
 
 
 def test_walkforward_top5_writes_markdown(cfg: dict) -> None:

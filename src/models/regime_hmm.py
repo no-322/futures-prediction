@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import numpy as np
 from hmmlearn.hmm import GaussianHMM
+from scipy.special import logsumexp
+from scipy.stats import multivariate_normal
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 
@@ -71,6 +73,12 @@ def assign_regime(
 ) -> np.ndarray:
     """Decode the hidden-state sequence (Viterbi) for new descriptor rows.
 
+    WARNING: this is the **smoothing** decode — Viterbi picks the most-likely state
+    at bar t using the *entire* sequence, including bars after t, so the regime label
+    at t peeks at the future (look-ahead bias). Retained for the legacy
+    ``regime_binary`` path; prefer ``filter_regime`` / ``filter_regime_posterior`` for
+    causal, no-look-ahead assignment.
+
     Args:
         hmm: Fitted GaussianHMM from fit_regime().
         scaler: Fitted StandardScaler from fit_regime().
@@ -80,6 +88,80 @@ def assign_regime(
         Integer raw-state array of shape (n,).
     """
     return hmm.predict(scaler.transform(X_regime))
+
+
+def filter_regime_posterior(
+    hmm: GaussianHMM,
+    scaler: StandardScaler,
+    X_regime: np.ndarray,
+) -> np.ndarray:
+    """Causal forward-filtered posterior P(state_t | descriptors_0..t) per row.
+
+    Runs the HMM forward algorithm (filtering) instead of Viterbi (smoothing): the
+    posterior at row t uses only rows 0..t, never the future. Because the regime
+    descriptors are themselves lag-1 (built from data <= t-1), the filtered posterior
+    at row t depends only on data <= t-1 — no look-ahead.
+
+    Implemented in log-space from the fitted HMM's own parameters (startprob, transmat,
+    Gaussian emissions) so it does not depend on private hmmlearn internals.
+
+    Args:
+        hmm: Fitted GaussianHMM from fit_regime() (covariance_type="full").
+        scaler: Fitted StandardScaler from fit_regime().
+        X_regime: Descriptor array, shape (n, len(REGIME_COLS)).
+
+    Returns:
+        Float array of shape (n, hmm.n_components): each row is the filtered posterior
+        over raw states (non-negative, sums to 1).
+    """
+    Xs = scaler.transform(X_regime)
+    n = Xs.shape[0]
+    k = int(hmm.n_components)
+
+    # Per-state Gaussian emission log-probabilities, shape (n, k).
+    log_b = np.column_stack([
+        multivariate_normal.logpdf(
+            Xs, mean=hmm.means_[s], cov=hmm.covars_[s], allow_singular=True
+        )
+        for s in range(k)
+    ])
+    # Zeros in startprob/transmat → -inf in log-space, which logsumexp handles
+    # correctly (those states are simply excluded); silence the benign warning.
+    with np.errstate(divide="ignore"):
+        log_start = np.log(hmm.startprob_)
+        log_trans = np.log(hmm.transmat_)
+
+    log_alpha = np.empty((n, k))
+    log_alpha[0] = log_start + log_b[0]
+    for t in range(1, n):
+        # log_alpha[t, j] = logsumexp_i(log_alpha[t-1, i] + log_trans[i, j]) + log_b[t, j]
+        log_alpha[t] = logsumexp(
+            log_alpha[t - 1][:, None] + log_trans, axis=0
+        ) + log_b[t]
+
+    # Normalise each row to a filtered posterior (softmax over states).
+    log_post = log_alpha - logsumexp(log_alpha, axis=1, keepdims=True)
+    return np.exp(log_post)
+
+
+def filter_regime(
+    hmm: GaussianHMM,
+    scaler: StandardScaler,
+    X_regime: np.ndarray,
+) -> np.ndarray:
+    """Causal forward-filtered raw-state assignment (argmax of the filtered posterior).
+
+    The no-look-ahead replacement for ``assign_regime``: state_t uses only data <= t-1.
+
+    Args:
+        hmm: Fitted GaussianHMM from fit_regime().
+        scaler: Fitted StandardScaler from fit_regime().
+        X_regime: Descriptor array, shape (n, len(REGIME_COLS)).
+
+    Returns:
+        Integer raw-state array of shape (n,).
+    """
+    return filter_regime_posterior(hmm, scaler, X_regime).argmax(axis=1)
 
 
 def canonical_regime_labels(

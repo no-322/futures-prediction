@@ -323,6 +323,54 @@ def test_predict_fn_threshold_applied(synthetic) -> None:
     assert 0.0 <= res["mean_accuracy"] <= 1.0
 
 
+def test_fold_transform_appends_column(synthetic) -> None:
+    # A fold_transform that appends a column is seen by the fitted model (per fold).
+    X, y, ts = synthetic
+    captured: dict[str, int] = {}
+
+    class _F:
+        def __call__(self):
+            class _M:
+                def fit(self2, Xtr, ytr):
+                    captured["ncol"] = Xtr.shape[1]
+                    self2.maj = int(pd.Series(ytr).mode().iloc[0])
+                    return self2
+
+                def predict(self2, Xte):
+                    return np.full(len(Xte), self2.maj, dtype=int)
+            return _M()
+
+    def ft(full_train_idx, test_idx):
+        X_tr = X.iloc[full_train_idx].copy(); X_tr["extra"] = 1.0
+        X_te = X.iloc[test_idx].copy(); X_te["extra"] = 1.0
+        return X_tr, X_te, None
+
+    res = walk_forward(X, y, ts, _F(), train_months=3, test_months=1, step_months=1,
+                       fold_transform=ft, name="ft", save=False)
+    assert res["n_folds"] > 0
+    assert captured["ncol"] == X.shape[1] + 1          # model trained on augmented X
+
+
+def test_fold_transform_gate_restricts_scoring(synthetic) -> None:
+    # A test_gate from fold_transform narrows scoring; coverage/n_eligible are reported.
+    X, y, ts = synthetic
+    keep = np.ones(len(X), dtype=bool)
+
+    def ft(full_train_idx, test_idx):
+        gate = (test_idx % 2 == 0)                      # keep ~half the test bars
+        return X.iloc[full_train_idx], X.iloc[test_idx], gate
+
+    res = walk_forward(X, y, ts, _CountingFactory(), train_months=3, test_months=1,
+                       step_months=1, keep=keep, fold_transform=ft, name="gate",
+                       save=False)
+    for f in res["per_fold"]:
+        assert "coverage" in f and "n_eligible" in f
+        assert f["n_test"] <= f["n_eligible"]
+        assert f["coverage"] == pytest.approx(f["n_test"] / f["n_eligible"])
+    assert (sum(f["n_test"] for f in res["per_fold"])
+            < sum(f["n_eligible"] for f in res["per_fold"]))
+
+
 def test_module_factory_reproduces_module_training(synthetic) -> None:
     from src.models import baseline as m_baseline
     X, y, ts = synthetic
