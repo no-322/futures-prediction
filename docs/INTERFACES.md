@@ -31,6 +31,7 @@ src/
   statistics.py    # compute (classification metrics) + backtest (equity/P&L)
   backtest.py      # selection/I-O runner around statistics.backtest
   run_stats.py     # batch stats orchestrator (Sections A/C/D + nft no-flat-test)
+  walkforward.py   # rolling walk-forward validation (iteration metric)
   feature_importance.py
   evaluate.py      # legacy accuracy/recall/confusion helpers
 app.py             # Streamlit GUI (train / predict / statistics+backtest)
@@ -192,6 +193,35 @@ Works for binary and multiclass.
   passive_equity` arrays + scalars `final_equity, total_return, max_drawdown,
   annualized_sharpe` and the **passive always-long benchmark** (`passive_*`).
 
+### 3.8 Walk-forward validation — `src/walkforward.py`
+The repo's **iteration metric** (see `.claude/skills/evaluation`): a rolling
+fixed-width calendar window (default **3-month train / 1-month test**, sizes from
+`config['walk_forward']`), stepped forward, scoring a **fresh model per fold**.
+- `walk_forward(X, y, timestamps, model_factory, *, config=None, …, name=, save=True) -> WalkForwardResult`.
+  - Inputs are **row-aligned**: `X` `(n, K)`, `y` `{0,1}` length `n`, `timestamps`
+    = the aligned `"Date and Time"` (`raw_align["Date and Time"]`), length `n`,
+    monotonically non-decreasing.
+  - `model_factory: Callable[[], estimator]` returns a **fresh, unfitted**
+    sklearn-style object (`fit(X,y)` / `predict(X)->{0,1}`); called once per fold so
+    no fitted state leaks across folds. Use `project_factories(cfg)[algo]` for the
+    four repo models (SVM is a `Pipeline(StandardScaler, SVC)` → scaler fit in-fold).
+  - `WalkForwardResult` (TypedDict): `name, n_folds, mean_accuracy, std_accuracy,
+    min_accuracy, max_accuracy, per_fold: [{fold, accuracy, train_start, train_end,
+    test_start, test_end, n_train, n_test}], npz_path`.
+- **No-flat / threshold options (optional, back-compatible):** pass `keep` (boolean
+  non-flat mask over the full `X/y/ts`) to enable — `include_flat=False` (default) scores
+  the **no-flat test slice** per fold; `drop_flat_train=True` drops flat rows from each
+  train block; `predict_fn=(model,X)->labels` applies a decision threshold via
+  `predict_proba`. With `keep=None` these are inert (full-block scoring, today's
+  behavior). `module_factory(module, params, tmp)` builds a per-fold factory that
+  reproduces a `src.models.*` recipe exactly (used by `run_stats.walkforward_top5`).
+- **Swap contract:** any callable yielding an sklearn-style estimator is a drop-in;
+  the harness is decoupled from feature/label building (caller supplies `X,y,ts`).
+- **Leakage guards:** monotonic-time assertion; per-fold `train_idx.max() <
+  test_idx.min()`; `purge`/`embargo` params (default 0, inert under the single-bar
+  label). The final 50/50 test set is **not** consulted here — walk-forward is the
+  interim metric; the held-out test stays touch-once.
+
 ---
 
 ## 4. Persisted artifact formats (`data/processed/`)
@@ -202,6 +232,7 @@ Works for binary and multiclass.
 | `<algo>_predictions.npz` | `y_true, y_pred` (int `{0,1}`); binary-suite variants add `move` (float) |
 | `exp_regime_binary_predictions.npz` | `y_true, y_pred, regime ({0,1}), move` |
 | `backtest_<algo>_predictions.npz` | `signal, position, bar_return, net_return, payoff, equity, passive_equity, timestamps(datetime64)` |
+| `walkforward_<name>_predictions.npz` | `y_true, y_pred, fold_id` (int, test rows concatenated across folds); `accuracies` (per-fold float); `test_starts, test_ends` (ISO str per fold) |
 | `features_v2.parquet` | cached 49-feature matrix |
 | `training_metadata.json` | `{algo: {display_name, data_path, train_size, n_test, params, metrics:{accuracy,recall}, timestamp}}` |
 
@@ -211,6 +242,7 @@ Binary-suite prefixes: `exp_noflat_<algo>` (no-flat, 20-feat), `exp_v2_<algo>`
 ### `config.yaml` schema
 ```yaml
 data:   { path: data/raw/data.csv, train_size: 0.5 }
+walk_forward: { train_months: 3, test_months: 1, step_months: 1, purge: 0, embargo: 0 }
 models: { baseline: {max_iter}, rf: {n_estimators, max_depth, …},
           gbm: {n_estimators, learning_rate, …}, svm: {C, kernel, gamma, …} }
 ```

@@ -42,3 +42,22 @@ Created the GUI. I wanted to have an info button that shows if a trained model a
 ## 2026-06-12 - Friday
 
 I noticed that SVM not only takes time to train but also 3.5 hrs to predict 250k rows. On investigation I found that overtraining in SVM and random forest. SVM has nearly one support vector for every record. Similarly random forest is too deep. After dropping flat bars GBM is making a profit of 300+%. Logistic and GBM are the ones with least overfitting. But when we add a transaction cost of even 1bp this 300% doesn't persist. We get a drawdown of 100%. Adding regularization might help rf and svm. Current rf model goes 68-188 levels. Next step would be to introduce max_depth somewhere between 5-10. raise min_sample_leaf and use ccp_alpha for regularization.  
+
+## 2026-06-22 Monday
+
+I have added a walk-forward evaluation module. I know that there are better models present I want to better optimize my model. But if I were to train in-order to get better accuracy on test-set, I lose the "unseen" test set and I am essentially doing data-mining. So I have introduced the walk-forward module. I am using a rolling window for the training. The default is 3 mo train and 1 mo predict. Based on past experiment results that also match with [Interpretable Hypothess-Driven Trading](https://arxiv.org/html/2512.12924v1) I expect high volatility period accuracy to be better. 
+
+I am focusing on the top 5 models in the model leaderboard. After some EDA an interesting result that has come up is that both logistic regressions placed 1st and 2nd in the leaderboard are individual winners in 14 windows each out of a total 36 windows. This could mean  based on regime analysis if I see a clear pattern on when tuned is beating logisitc regression I can write a pipleline that will use a mixture to get better accuracy.
+
+## 2026-06-23 Tuesday
+
+Today I am focusing on orderbook related features. I already implemented VWAP imbalance (VWAP/Close - 1). Now I added volume z-score and signed volume to signify direction based on close> open.
+
+The results showed that it helped the non-linear model but linear-models performed worse. After normalizing volume and since signed volume can not be normalized I had to divide by rolling history of volume for every fold (Normalization removes established polarity) it affected the linear models to a lesser extent but it still ended up damaging them
+
+## 2026-06-25 Thursday
+Today I tried adding HMM to test how much regime awareness adds to my result. I have also seen research papers suggest high vol regime to be favourable. But before proceeding I wanted to correct the previous implementation. Instead of filtering, previous results used smoothing. This introduced look-ahead bias. To correct this, I started using filtering by which regime is assigned based solely on data up until t-1. I implemented two versions of HMM. Version 1 uses HMM as a gate and trades only during high volatility periods. This has a coverage of 53.7% and a no-flat accuracy of 54.82%. The other uses probability of High volatility as a feature. Both seem to perfrom better than the existing winners with the HMM gates performing the best. High volatility region has an annualized vol of 9.4% and low volatility region has an annualized vol of 7.2%. Although gate has higher accuracy it's backtest is considerably worse since it doesnt trade on all days. 
+
+# 2026-07-01 Wednesday
+
+None of the model improvements are statistically significant.
