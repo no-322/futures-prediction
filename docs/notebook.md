@@ -56,6 +56,8 @@ Today I am focusing on orderbook related features. I already implemented VWAP im
 The results showed that it helped the non-linear model but linear-models performed worse. After normalizing volume and since signed volume can not be normalized I had to divide by rolling history of volume for every fold (Normalization removes established polarity) it affected the linear models to a lesser extent but it still ended up damaging them
 
 ## 2026-06-25 Thursday
+Today I tried adding HMM to test how much regime awareness adds to my result. I have also seen research papers suggest high vol regime to be favourable. But before proceeding I wanted to correct the previous implementation. Instead of filtering, previous results used smoothing. This introduced look-ahead bias. To correct this, I started using filtering by which regime is assigned based solely on data up until t-1. I implemented two versions of HMM. Version 1 uses HMM as a gate and trades only during high volatility periods. This has a coverage of 53.7% and a no-flat accuracy of 54.82%. The other uses probability of High volatility as a feature. Both seem to perfrom better than the existing winners with the HMM gates performing the best. High volatility region has an annualized vol of 9.4% and low volatility region has an annualized vol of 7.2%. Although gate has higher accuracy it's backtest is considerably worse since it doesnt trade on all days. 
 
+# 2026-07-01 Wednesday
 
-
+None of the model improvements are statistically significant.
