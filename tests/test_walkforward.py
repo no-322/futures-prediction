@@ -242,11 +242,11 @@ def test_summarize_contains_headline_and_table(synthetic) -> None:
 
 
 def test_project_factories_build_fresh_seeded_models() -> None:
-    cfg = {"models": {"baseline": {"max_iter": 500}, "rf": {"n_estimators": 10},
+    cfg = {"models": {"logistic": {"max_iter": 500}, "rf": {"n_estimators": 10},
                       "gbm": {"n_estimators": 10}}}
     facs = project_factories(cfg)
-    assert set(facs) == {"baseline", "rf", "gbm"}
-    assert facs["baseline"]().random_state == 42
+    assert set(facs) == {"logistic", "rf", "gbm"}
+    assert facs["logistic"]().random_state == 42
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +336,7 @@ def test_fold_transform_gate_restricts_scoring(synthetic) -> None:
 
 
 def test_module_factory_reproduces_module_training(synthetic) -> None:
-    from src.models import baseline as m_baseline
+    from src.models import logistic as m_baseline
     X, y, ts = synthetic
     tmp = Path("/tmp/_wf_modfac_test.joblib")
     factory = module_factory(m_baseline, {"max_iter": 200}, tmp)

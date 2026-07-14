@@ -20,7 +20,7 @@ walk_forward:
   embargo: 0             # test rows skipped after the train block (adjacent-boundary guard)
 
 models:
-  baseline:
+  logistic:
     max_iter: 1000
 
   rf:

@@ -25,7 +25,7 @@ from src.tuning import (
     select_features,
     tune_threshold,
 )
-from src.models import baseline
+from src.models import logistic as baseline
 
 VAL_FRAC = 0.2
 
@@ -93,10 +93,10 @@ def _synthetic_split() -> SelectionSplit:
 
 def test_grid_search_picks_learnable() -> None:
     sel = _synthetic_split()
-    best, acc, results = grid_search("baseline", sel)
+    best, acc, results = grid_search("logistic", sel)
     assert best in [p for p, _ in results]
     assert acc > 0.6  # f0-driven label is learnable
-    assert len(results) == len(_GRIDS["baseline"])
+    assert len(results) == len(_GRIDS["logistic"])
 
 
 def test_predict_with_threshold(tmp_path) -> None:
@@ -106,11 +106,11 @@ def test_predict_with_threshold(tmp_path) -> None:
     model = baseline.train(X, y, save_path=tmp_path / "m.joblib")
     # threshold=None reproduces the plain label prediction
     np.testing.assert_array_equal(
-        predict_with_threshold("baseline", model, X, None),
+        predict_with_threshold("logistic", model, X, None),
         baseline.predict(model, X),
     )
     # an impossibly high probability threshold forces every prediction to 0
-    assert set(np.unique(predict_with_threshold("baseline", model, X, 1.01))) == {0}
+    assert set(np.unique(predict_with_threshold("logistic", model, X, 1.01))) == {0}
 
 
 def test_select_features_returns_subset() -> None:

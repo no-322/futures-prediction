@@ -20,7 +20,7 @@ prediction set is persisted to ``data/processed/`` (Rule 7).
 
 Run with::
 
-    python -m src.tuning --algos baseline rf gbm --featset v2
+    python -m src.tuning --algos logistic rf gbm --featset v2
     python -m src.tuning --algos rf --featset v3 --move-weight --tune-threshold
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ import src.statistics as statistics
 from src.config import load_config
 from src.features import build_features
 from src.labels import build_labels, flat_mask
-from src.models import baseline, rf
+from src.models import logistic, rf
 from src.models.gbm import predict as gbm_predict
 from src.models.gbm import train as gbm_train
 from src.split import split
@@ -46,9 +46,9 @@ _PROC = Path("data/processed")
 _TMP = _PROC / "_tuning_tmp"
 _DOCS = Path("docs/notes")
 
-_ALGOS: tuple[str, ...] = ("baseline", "rf", "gbm")
+_ALGOS: tuple[str, ...] = ("logistic", "rf", "gbm")
 _DISPLAY = {
-    "baseline": "Logistic Regression",
+    "logistic": "Logistic Regression",
     "rf": "Random Forest",
     "gbm": "Gradient Boosting (XGBoost)",
 }
@@ -61,7 +61,7 @@ _GRIDS: dict[str, list[dict]] = {
     # sklearn 1.8 unified API: l1_ratio (0=L2, 1=L1, between=elastic-net) + C.
     # L2 uses lbfgs (fast, robust on raw-scale features — matches the champion);
     # L1/elastic-net need saga (higher max_iter, converges well on v2/v3 scale).
-    "baseline": [
+    "logistic": [
         {"l1_ratio": 0.0, "C": 0.1, "solver": "lbfgs", "max_iter": 2000},
         {"l1_ratio": 0.0, "C": 1.0, "solver": "lbfgs", "max_iter": 2000},
         {"l1_ratio": 0.0, "C": 10.0, "solver": "lbfgs", "max_iter": 2000},
@@ -107,8 +107,8 @@ def _feature_fn(featset: str) -> Callable[[pd.DataFrame], pd.DataFrame]:
 def _fit(algo: str, X: pd.DataFrame, y: pd.Series, params: dict,
          save_path: Path, sample_weight: np.ndarray | None = None) -> Any:
     """Fit one algorithm, forwarding sample_weight, persisting to save_path."""
-    if algo == "baseline":
-        return baseline.train(X, y, params=params, save_path=save_path,
+    if algo == "logistic":
+        return logistic.train(X, y, params=params, save_path=save_path,
                               sample_weight=sample_weight)
     if algo == "rf":
         return rf.train(X, y, params=params, save_path=save_path,
@@ -121,8 +121,8 @@ def _fit(algo: str, X: pd.DataFrame, y: pd.Series, params: dict,
 
 def _predict(algo: str, model: Any, X: pd.DataFrame) -> np.ndarray:
     """Predict binary labels with a fitted model (default threshold)."""
-    if algo == "baseline":
-        return baseline.predict(model, X)
+    if algo == "logistic":
+        return logistic.predict(model, X)
     if algo == "rf":
         return rf.predict(model, X)
     if algo == "gbm":
@@ -133,7 +133,7 @@ def _predict(algo: str, model: Any, X: pd.DataFrame) -> np.ndarray:
 def _scores(algo: str, model: Any, X: pd.DataFrame) -> np.ndarray:
     """Return continuous decision scores for threshold tuning.
 
-    Probabilistic models (baseline/rf/gbm) return P(class=1).
+    Probabilistic models (logistic/rf/gbm) return P(class=1).
     """
     return model.predict_proba(X)[:, 1]
 
@@ -150,11 +150,11 @@ def predict_with_threshold(
 
     With ``threshold=None`` this is the plain label prediction (``_predict``).
     Otherwise labels are ``_scores(...) >= threshold`` — probability ≥ threshold
-    for baseline/rf/gbm. Used by the GUI to apply the threshold stored in
+    for logistic/rf/gbm. Used by the GUI to apply the threshold stored in
     ``tuned_params_{featset}.json``.
 
     Args:
-        algo: One of baseline/rf/gbm.
+        algo: One of logistic/rf/gbm.
         model: A fitted model.
         X: Feature matrix to score.
         threshold: Tuned decision threshold; None → default label prediction.
@@ -290,7 +290,7 @@ def grid_search(
     """Grid-search one algorithm; score combos by no-flat validation accuracy.
 
     Args:
-        algo: One of baseline/rf/gbm.
+        algo: One of logistic/rf/gbm.
         sel: SelectionSplit (inner-train + no-flat validation).
         grid: Param dicts to try; defaults to the module's curated grid.
 
@@ -338,7 +338,7 @@ def tune_threshold(scores_val: np.ndarray, y_val: np.ndarray) -> float:
 
 def select_features(
     sel: SelectionSplit,
-    score_algo: str = "baseline",
+    score_algo: str = "logistic",
     k_grid: list[int] | None = None,
 ) -> tuple[list[str], list[tuple[int, float]]]:
     """Pick a feature subset that maximises no-flat validation accuracy.

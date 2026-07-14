@@ -471,7 +471,7 @@ def module_factory(module: Any, params: dict, tmp_path: Path) -> Callable[[], An
 
     Args:
         module: A project model module exposing ``train(X, y, params, save_path)`` and
-            ``predict(model, X)`` (``src.models.baseline`` / ``rf`` / ``gbm``).
+            ``predict(model, X)`` (``src.models.logistic`` / ``rf`` / ``gbm``).
         params: Hyperparameter overrides overlaid on the module's defaults.
         tmp_path: Scratch path the module's ``train`` writes its joblib to each fold
             (overwritten; required because the module persists on every fit).
@@ -495,18 +495,18 @@ def project_factories(config: dict) -> dict[str, Callable[[], Any]]:
         config: Config dict from ``load_config()`` supplying per-algo hyperparameters.
 
     Returns:
-        Dict mapping ``{'baseline','rf','gbm'}`` to zero-arg factories.
+        Dict mapping ``{'logistic','rf','gbm'}`` to zero-arg factories.
     """
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.linear_model import LogisticRegression
     from xgboost import XGBClassifier
 
-    baseline_p = model_params(config, "baseline") or {"max_iter": 1000}
+    logistic_p = model_params(config, "logistic") or {"max_iter": 1000}
     rf_p = model_params(config, "rf")
     gbm_p = model_params(config, "gbm")
 
     return {
-        "baseline": sklearn_factory(LogisticRegression, baseline_p),
+        "logistic": sklearn_factory(LogisticRegression, logistic_p),
         "rf": sklearn_factory(RandomForestClassifier, rf_p),
         "gbm": sklearn_factory(XGBClassifier, gbm_p),
     }
@@ -545,8 +545,8 @@ def _build_xy(featset: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
 def main() -> None:
     """CLI entry: run walk-forward for one algo on a feature set and print the report."""
     parser = argparse.ArgumentParser(description="Rolling walk-forward validation.")
-    parser.add_argument("--algo", default="baseline",
-                        choices=("baseline", "rf", "gbm"))
+    parser.add_argument("--algo", default="logistic",
+                        choices=("logistic", "rf", "gbm"))
     parser.add_argument("--featset", default="v1", choices=("v1", "v2", "v3"))
     parser.add_argument("--train-months", type=int, default=None)
     parser.add_argument("--test-months", type=int, default=None)

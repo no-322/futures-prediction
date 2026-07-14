@@ -68,7 +68,7 @@ def test_feature_importance_rf_and_baseline_sorted() -> None:
     assert imp["importance"].is_monotonic_decreasing
 
     lr = LogisticRegression(max_iter=200).fit(X, y)
-    imp_b = bn._feature_importance("baseline", lr, list(X.columns))
+    imp_b = bn._feature_importance("logistic", lr, list(X.columns))
     assert len(imp_b) == 3
     assert (imp_b["importance"] >= 0).all()       # abs(coef)
 

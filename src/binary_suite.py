@@ -1,6 +1,6 @@
 """Experiment 4 — Binary classification suite (configurable feature set + flat toggle).
 
-Trains the three classifiers (baseline, rf, gbm) on the canonical
+Trains the three classifiers (logistic, rf, gbm) on the canonical
 50/50 time-ordered split as binary up/down models. Two knobs select the variant:
   - feature set: v1 `build_features` (20-dim) or v2 `build_features_v2` (49-dim);
   - `drop_flat`: remove flat bars (Close == Open) from the *training* set only,
@@ -35,15 +35,15 @@ from src.config import load_config, model_params
 from src.features import build_features
 from src.labels import build_labels, drop_flat
 from src.load import load_raw
-from src.models import baseline, rf
+from src.models import logistic, rf
 from src.models.gbm import predict as gbm_predict
 from src.models.gbm import train as gbm_train
 from src.split import split
 
 _PROC = Path("data/processed")
-_ALGOS: tuple[str, ...] = ("baseline", "rf", "gbm")
+_ALGOS: tuple[str, ...] = ("logistic", "rf", "gbm")
 BASE_DISPLAY: dict[str, str] = {
-    "baseline": "Logistic Regression",
+    "logistic": "Logistic Regression",
     "rf":       "Random Forest",
     "gbm":      "Gradient Boosting (XGBoost)",
 }
@@ -104,8 +104,8 @@ def _build_dataset(
 
 def _train(algo: str, X: pd.DataFrame, y: pd.Series, params: dict, save_path: Path) -> Any:
     """Train one algorithm, persisting to the no-flat save_path."""
-    if algo == "baseline":
-        return baseline.train(X, y, params=params, save_path=save_path)
+    if algo == "logistic":
+        return logistic.train(X, y, params=params, save_path=save_path)
     if algo == "rf":
         return rf.train(X, y, params=params, save_path=save_path)
     if algo == "gbm":
@@ -115,8 +115,8 @@ def _train(algo: str, X: pd.DataFrame, y: pd.Series, params: dict, save_path: Pa
 
 def _predict(algo: str, model: Any, X: pd.DataFrame) -> np.ndarray:
     """Predict binary labels with a fitted model."""
-    if algo == "baseline":
-        return baseline.predict(model, X)
+    if algo == "logistic":
+        return logistic.predict(model, X)
     if algo == "rf":
         return rf.predict(model, X)
     if algo == "gbm":
@@ -131,7 +131,7 @@ def _feature_importance(
 ) -> pd.DataFrame | None:
     """Return a ranked feature-importance table, or None if unavailable.
 
-    rf/gbm expose ``feature_importances_``; baseline (logistic regression) uses
+    rf/gbm expose ``feature_importances_``; logistic regression uses
     the absolute coefficient magnitude. Any other model returns None.
 
     Args:
@@ -145,7 +145,7 @@ def _feature_importance(
     """
     if algo in ("rf", "gbm"):
         imp = np.asarray(model.feature_importances_, dtype=float)
-    elif algo == "baseline":
+    elif algo == "logistic":
         imp = np.abs(np.asarray(model.coef_, dtype=float)).ravel()
     else:
         return None
@@ -177,7 +177,7 @@ def run(
 
     Args:
         config: Parsed config dict; defaults to load_config().
-        algos: Which algorithms to run (subset of baseline/rf/gbm).
+        algos: Which algorithms to run (subset of logistic/rf/gbm).
         build_features_fn: Feature builder; defaults to v1 `build_features`.
         prefix: Artifact filename prefix (e.g. 'exp_noflat', 'exp_v2').
         display_suffix: Suffix used in display names (e.g. 'no-flat, v2').
