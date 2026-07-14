@@ -162,6 +162,12 @@ Rolling walk-forward validation — the iteration metric (see `.claude/skills/ev
 | `_transform_v3` | `(v2: pd.DataFrame) -> pd.DataFrame` | Pure row-wise transform turning a 49-col v2 matrix into the 48-col v3 matrix (log-ratio of base lags vs `lag1_Close`); fills any inf/NaN edge cells. |
 | `load_or_build_features_v3` | `(df: pd.DataFrame) -> pd.DataFrame` | Return the v3 matrix from `data/processed/features_v3.parquet` if present, else build it from the cached v2 matrix and cache it. |
 
+## src.features_v1_rel
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `build_features_v1_rel` | `(df: pd.DataFrame) -> pd.DataFrame` | Build the 19-feature stationary v1-relative matrix: v1's 20 raw price lags replaced by `log(value / lag1_Open)` (anchored on the strictly-prior open `Open_{t-1}`; the now-constant `lag1_Open` is dropped). The v1 analog of features_v3 (which anchors on `lag1_Close`). No look-ahead. |
+
 ## src.features_orderflow
 
 | Function | Signature | Description |

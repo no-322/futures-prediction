@@ -35,6 +35,7 @@ Every binary up/down model on the 50/50 time-ordered test set, compared in one p
 | SVM (RBF kernel) (v2, flat-incl) | 0.5157 | 0.6060 | 0.0949 |
 | Random Forest (no-flat) | 0.5071 | 0.5013 | 0.0093 |
 | Gradient Boosting (XGBoost) (tuned, v1) | 0.5060 | 0.3370 | 0.0048 |
+| Logistic Regression (no-flat, v1-rel) | 0.5058 | 0.2579 | 0.0000 |
 | Gradient Boosting (XGBoost) (no-flat) | 0.5028 | 0.4259 | 0.0030 |
 | SVM (RBF kernel) (no-flat) | 0.5027 | 0.4973 | 0.0144 |
 | Random Forest (tuned, v1) | 0.5010 | 0.5676 | 0.0121 |

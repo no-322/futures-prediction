@@ -411,6 +411,10 @@ def _leaderboard_name(stem: str, registry: dict[str, str]) -> str:
         if stem.startswith(prefix):
             base = stem[len(prefix):]
             return f"{_leaderboard_name(base, registry)} {label}"
+    if stem.startswith("exp_noflat_v1rel_"):
+        from src.binary_suite import BASE_DISPLAY
+        algo = stem[len("exp_noflat_v1rel_"):]
+        return f"{BASE_DISPLAY.get(algo, algo)} (no-flat, v1-rel)"
     if stem.startswith("tuned_"):
         from src.binary_suite import BASE_DISPLAY
         _, feat, algo = stem.split("_", 2)
@@ -548,6 +552,9 @@ def _featset_builder(featset: str) -> "Callable":
     if featset == "orderflow":
         from src.features_orderflow import load_or_build_features_orderflow
         return load_or_build_features_orderflow
+    if featset == "v1rel":
+        from src.features_v1_rel import build_features_v1_rel
+        return build_features_v1_rel
     raise ValueError(f"Unknown featset: {featset!r}")
 
 
@@ -585,6 +592,23 @@ def _top5_recipe(stem: str, cfg: dict) -> dict:
     raise ValueError(f"No walk-forward recipe for stem {stem!r}")
 
 
+def _is_top5_recipe_stem(stem: str) -> bool:
+    """True if a leaderboard stem is a base walk-forward recipe (not a derived set).
+
+    The top-5 walk-forward / variant generators operate on the base model recipes
+    (`exp_noflat_baseline`, `tuned_{featset}_{algo}`). Derived leaderboard rows — the
+    single-split order-flow/HMM variants (`ss_*`), v2/v3 binary suites, HMM-regime
+    binary, walk-forward sets — are not walk-forward recipes and must be skipped so
+    they cannot recurse into the selection (e.g. an `ss_hmmgate_*` ranking top-2).
+    """
+    return stem == "exp_noflat_baseline" or stem.startswith("tuned_")
+
+
+def _top5_ranked(cfg: dict, k: int) -> list[tuple[str, str, float, float, float]]:
+    """Top-k leaderboard rows restricted to base walk-forward recipes (best first)."""
+    return [r for r in rank_models(cfg) if _is_top5_recipe_stem(r[0])][:k]
+
+
 def walkforward_top5(cfg: dict, k: int = 5, path: Path = _TOP5_EVAL_PATH) -> None:
     """Rolling walk-forward evaluation of the top-k leaderboard models → markdown.
 
@@ -613,7 +637,7 @@ def walkforward_top5(cfg: dict, k: int = 5, path: Path = _TOP5_EVAL_PATH) -> Non
     keep = ~flat_mask(raw_align)                       # full-series non-flat mask
     n_keep, n_total = int(keep.sum()), int(keep.size)
 
-    ranked = rank_models(cfg)[:k]
+    ranked = _top5_ranked(cfg, k)
     feat_cache: dict[str, "pd.DataFrame"] = {}
     tmp = _PROC / "_walkforward_tmp" / "model.joblib"
 
@@ -728,7 +752,7 @@ def walkforward_top5_orderflow(cfg: dict, k: int = 5,
     X_of_raw = load_or_build_features_orderflow(df, "raw").reset_index(drop=True)
     X_of_lin = load_or_build_features_orderflow(df, "linear").reset_index(drop=True)
 
-    ranked = rank_models(cfg)[:k]
+    ranked = _top5_ranked(cfg, k)
     feat_cache: dict[str, "pd.DataFrame"] = {}
     tmp = _PROC / "_walkforward_tmp" / "model.joblib"
 
@@ -915,7 +939,7 @@ def walkforward_top5_hmm(cfg: dict, mode: str, k: int = 5,
     vol15_idx = REGIME_COLS.index("lag1_vol15")
 
     tag = "feat" if mode == "feature" else "gate"
-    ranked = rank_models(cfg)[:k]
+    ranked = _top5_ranked(cfg, k)
     feat_cache: dict[str, "pd.DataFrame"] = {}
     tmp = _PROC / "_walkforward_tmp" / "model.joblib"
 
@@ -1081,7 +1105,7 @@ def build_leaderboard_variants(cfg: dict, k: int = 5) -> None:
               + (f", gate cov={float((keep_test & gate).sum()) / keep_test.sum() * 100:.0f}%"
                  if gate is not None else "") + ")")
 
-    for stem, name, *_ in rank_models(cfg)[:k]:
+    for stem, name, *_ in _top5_ranked(cfg, k):
         recipe = _top5_recipe(stem, cfg)
         algo, featset, thr = recipe["algo"], recipe["featset"], recipe["threshold"]
         is_linear = algo == "baseline"

@@ -20,6 +20,7 @@ from src.run_stats import (
     _leaderboard_name,
     _nft_stats,
     _score_predset,
+    _top5_ranked,
     _top5_recipe,
     leaderboard,
     rank_models,
@@ -189,6 +190,7 @@ def test_walkforward_top5_writes_markdown(cfg: dict) -> None:
     assert text.count("\n## #") == 2                      # two model sections
     assert text.count("± ") >= 2                          # mean ± std headline each
     assert "| Fold |" in text                             # per-fold table
-    # Per-fold predictions persisted (Rule 7).
-    top_stem = rank_models(cfg)[0][0]
+    # Per-fold predictions persisted (Rule 7). walkforward_top5 runs the top base
+    # recipes (ss_*/derived leaderboard rows are excluded), so check that stem.
+    top_stem = _top5_ranked(cfg, 1)[0][0]
     assert (_PROC / f"walkforward_top5_{top_stem}_predictions.npz").exists()
