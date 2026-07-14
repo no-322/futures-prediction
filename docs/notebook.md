@@ -61,3 +61,17 @@ Today I tried adding HMM to test how much regime awareness adds to my result. I 
 # 2026-07-01 Wednesday
 
 None of the model improvements are statistically significant.
+
+# 2026-07-13 Monday
+
+Today I will be focusing on clean-up of repository. Although the modules.md has function signature, it does not have pseudocode tracking which led to me creating FEATURES.md. The entire point of this pipeline is to have an efficient machine that avoids double work. The past 2 week usage of my pipeline has led me to see a lot of flaws. I will start by modifying the modules.md creation. I will update CLAUDE.md for the same as well. 
+
+Work done include the following:
+1. Leaderboard walk-forward created as a seperate leaderboad based on avg window no-flat accuracy while also showing count of windows where it beat baseline
+2. post-tool use hook to maintain modules.md and module-diagram.md
+3. Dropped all flat metrics
+4. Although we by default remove flats.. this is valid only on the label and not during feature creation. 
+5. Modified the feature-engineering skill
+6. Removed SVM completely. 
+
+More detailed information can be found in log.md timestamp - 2026-07-13 15:08:33
