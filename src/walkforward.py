@@ -213,9 +213,6 @@ def walk_forward(
     step_months: int | None = None,
     purge: int | None = None,
     embargo: int | None = None,
-    keep: np.ndarray | None = None,
-    include_flat: bool = False,
-    drop_flat_train: bool = False,
     predict_fn: Callable[[Any, pd.DataFrame], np.ndarray] | None = None,
     fold_transform: Callable[
         [np.ndarray, np.ndarray],
@@ -234,11 +231,8 @@ def walk_forward(
     Window sizes resolve from explicit kwargs first, then ``config['walk_forward']``,
     then the skill defaults (3 months train / 1 month test, step = test width).
 
-    No-flat handling (this project's default): flat bars (``Close == Open``) are
-    ambiguous up/down targets. When a ``keep`` mask is supplied, per-fold accuracy is
-    computed on the **non-flat test rows by default** (``include_flat=False``) — the
-    no-flat test slice. With ``keep=None`` there is no flatness signal, so the full
-    test block is scored (back-compatible).
+    Flat bars (``Close == Open``) are dropped from the modelling set upstream, so every
+    test row is a decisive up/down bar and the whole test block is scored.
 
     Args:
         X: Feature matrix, shape (n, d). Row-aligned with ``y`` and ``timestamps``.
@@ -251,23 +245,16 @@ def walk_forward(
         config: Optional config dict (from ``load_config()``) supplying window sizes.
         train_months, test_months, step_months, purge, embargo: Optional explicit
             overrides; each takes precedence over ``config`` when not None.
-        keep: Optional boolean non-flat mask (True = ``Close != Open``), aligned to the
-            full X/y/timestamps. Enables the no-flat scoring / no-flat training options.
-        include_flat: If False (default) and ``keep`` is given, per-fold accuracy uses
-            only the non-flat test rows; True scores the full test block.
-        drop_flat_train: If True and ``keep`` is given, flat rows are dropped from each
-            fold's train block before fitting (default: train on the full block).
         predict_fn: Optional ``(model, X) -> labels`` override (e.g. to apply a decision
             threshold via ``predict_proba``); defaults to ``model.predict``.
         fold_transform: Optional per-fold hook ``(full_train_idx, test_idx) ->
-            (X_tr_full, X_te, test_gate)``. Called once per fold **before**
-            ``drop_flat_train`` subsetting, so anything fit inside it (e.g. a per-fold
-            HMM regime model) sees the train block only — the leakage rule. ``X_tr_full``
-            is row-aligned to ``full_train_idx`` (the pre-flat-drop train block) and
-            ``X_te`` to ``test_idx``; both may carry extra columns (e.g. an appended
-            regime posterior). ``test_gate`` is an optional boolean over ``test_idx``
-            AND-ed into the scoring mask (e.g. trade only high-vol bars); pass None for
-            no gate. When None, the fold uses ``X`` directly (back-compatible).
+            (X_tr, X_te, test_gate)``. Called once per fold so anything fit inside it
+            (e.g. a per-fold HMM regime model) sees the train block only — the leakage
+            rule. ``X_tr`` is row-aligned to ``full_train_idx`` and ``X_te`` to
+            ``test_idx``; both may carry extra columns (e.g. an appended regime
+            posterior). ``test_gate`` is an optional boolean over ``test_idx`` AND-ed
+            into the scoring mask (e.g. trade only high-vol bars); pass None for no gate.
+            When None, the fold uses ``X`` directly.
         name: Short tag used in the report and the persisted npz filename.
         save: If True, write predictions to
             ``data/processed/walkforward_{name}_predictions.npz``.
@@ -289,12 +276,6 @@ def walk_forward(
     X = X.reset_index(drop=True)
     y = pd.Series(y).reset_index(drop=True)
     ts = pd.to_datetime(pd.Series(timestamps).reset_index(drop=True))
-    if keep is not None:
-        keep = np.asarray(keep, dtype=bool)
-        if keep.shape[0] != len(X):
-            raise ValueError(
-                f"keep must align to X; got {keep.shape[0]} vs {len(X)}"
-            )
 
     folds = make_folds(ts, tr, te, st, purge=pu, embargo=em)
     if not folds:
@@ -307,7 +288,6 @@ def walk_forward(
     y_true_all: list[np.ndarray] = []
     y_pred_all: list[np.ndarray] = []
     fold_id_all: list[np.ndarray] = []
-    kept_all: list[np.ndarray] = []
     scored_all: list[np.ndarray] = []
     accuracies: list[float] = []
 
@@ -315,22 +295,13 @@ def walk_forward(
         full_train_idx = fold.train_idx
         test_idx = fold.test_idx
 
-        # Per-fold transform (e.g. fit a fresh HMM on the train block, append a regime
-        # column, and/or produce a scoring gate). Runs before drop_flat_train subsetting.
+        # Optional per-fold transform (e.g. fit a fresh HMM on the train block, append a
+        # regime column, and/or produce a scoring gate).
         if fold_transform is not None:
-            X_tr_full, X_te, test_gate = fold_transform(full_train_idx, test_idx)
+            X_tr, X_te, test_gate = fold_transform(full_train_idx, test_idx)
         else:
-            X_tr_full, X_te, test_gate = (
-                X.iloc[full_train_idx], X.iloc[test_idx], None,
-            )
-
-        # drop_flat_train subsets the (full) train block before fitting.
-        if drop_flat_train and keep is not None:
-            sub = keep[full_train_idx]
-            X_tr = X_tr_full.iloc[sub]
-            y_tr = y.iloc[full_train_idx[sub]]
-        else:
-            X_tr, y_tr = X_tr_full, y.iloc[full_train_idx]
+            X_tr, X_te, test_gate = X.iloc[full_train_idx], X.iloc[test_idx], None
+        y_tr = y.iloc[full_train_idx]
 
         model = model_factory()                       # fresh per fold
         model.fit(X_tr, y_tr)
@@ -340,14 +311,8 @@ def walk_forward(
             y_hat = np.asarray(model.predict(X_te))
         y_te_arr = y.iloc[test_idx].to_numpy()
 
-        # Eligible test rows (non-flat by default); a fold_transform gate narrows further.
-        test_keep = (
-            keep[test_idx] if keep is not None
-            else np.ones(y_te_arr.shape, dtype=bool)
-        )
-        eligible_mask = (
-            np.ones(y_te_arr.shape, dtype=bool) if include_flat else test_keep
-        )
+        # Every test row is decisive (flat dropped upstream); an optional gate narrows.
+        eligible_mask = np.ones(y_te_arr.shape, dtype=bool)
         if test_gate is not None:
             score_mask = eligible_mask & np.asarray(test_gate, dtype=bool)
         else:
@@ -364,7 +329,6 @@ def walk_forward(
         y_true_all.append(y_te_arr)
         y_pred_all.append(y_hat)
         fold_id_all.append(np.full(y_te_arr.shape, i, dtype=int))
-        kept_all.append(test_keep)
         scored_all.append(score_mask)
         per_fold.append(
             {
@@ -391,7 +355,6 @@ def walk_forward(
             y_true=np.concatenate(y_true_all),
             y_pred=np.concatenate(y_pred_all),
             fold_id=np.concatenate(fold_id_all),
-            kept=np.concatenate(kept_all),
             scored=np.concatenate(scored_all),
             accuracies=accs,
             test_starts=np.array([f["test_start"] for f in per_fold]),
@@ -554,8 +517,8 @@ def project_factories(config: dict) -> dict[str, Callable[[], Any]]:
 # ---------------------------------------------------------------------------
 
 def _build_xy(featset: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
-    """Load raw data and build (X, y, timestamps) aligned to df.iloc[4:]."""
-    from src.labels import build_labels
+    """Load raw data and build (X, y, timestamps), flat rows dropped, aligned."""
+    from src.labels import build_labels, drop_flat
     from src.load import load_raw
 
     cfg = load_config()
@@ -573,6 +536,7 @@ def _build_xy(featset: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
         raise ValueError(f"Unknown featset: {featset!r}")
 
     raw_align = df.iloc[4:].reset_index(drop=True)
+    X, raw_align = drop_flat(X, raw_align)              # binary 0/1 modelling set
     y = build_labels(raw_align)
     timestamps = raw_align["Date and Time"].reset_index(drop=True)
     return X, y, timestamps

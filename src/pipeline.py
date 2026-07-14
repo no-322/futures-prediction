@@ -71,9 +71,11 @@ def _build_dataset(
     Returns:
         Tuple of (X_train, X_test, y_train, y_test) with reset indices.
     """
+    from src.labels import drop_flat
     df = load_raw(data_path)
     features = build_features(df)
     raw_align = df.iloc[4:].reset_index(drop=True)
+    features, raw_align = drop_flat(features, raw_align)   # binary 0/1 modelling set
     X_train, X_test = split(features, train_size=train_size)
     raw_train, raw_test = split(raw_align, train_size=train_size)
     y_train = build_labels(raw_train)

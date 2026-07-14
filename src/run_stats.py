@@ -628,10 +628,11 @@ def walkforward_top5(cfg: dict, k: int = 5, path: Path = _TOP5_EVAL_PATH) -> Non
 
     df = load_raw(Path(cfg["data"]["path"]))
     raw_align = df.iloc[4:].reset_index(drop=True)
-    y = build_labels(raw_align)
-    timestamps = raw_align["Date and Time"].reset_index(drop=True)
-    keep = ~flat_mask(raw_align)                       # full-series non-flat mask
-    n_keep, n_total = int(keep.sum()), int(keep.size)
+    keep = ~flat_mask(raw_align)                       # flat rows dropped from modelling
+    raw_nf = raw_align[keep].reset_index(drop=True)
+    y = build_labels(raw_nf)
+    timestamps = raw_nf["Date and Time"].reset_index(drop=True)
+    n_keep = n_total = int(len(y))
 
     ranked = _top5_ranked(cfg, k)
     feat_cache: dict[str, "pd.DataFrame"] = {}
@@ -643,7 +644,7 @@ def walkforward_top5(cfg: dict, k: int = 5, path: Path = _TOP5_EVAL_PATH) -> Non
         featset = recipe["featset"]
         X = feat_cache.get(featset)
         if X is None:
-            X = _featset_builder(featset)(df)
+            X = _featset_builder(featset)(df)[keep].reset_index(drop=True)  # flat-free
             feat_cache[featset] = X
 
         thr = recipe["threshold"]
@@ -660,7 +661,7 @@ def walkforward_top5(cfg: dict, k: int = 5, path: Path = _TOP5_EVAL_PATH) -> Non
               f"thr={thr if thr is not None else 0.5})")
         res = walkforward.walk_forward(
             X, y, timestamps, factory,
-            config=cfg, keep=keep, drop_flat_train=True, predict_fn=predict_fn,
+            config=cfg, predict_fn=predict_fn,
             name=f"top5_{stem}",
         )
         headline = (

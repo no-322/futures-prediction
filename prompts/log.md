@@ -801,3 +801,13 @@ I want to focus on cleanup of repo now. There are a lot of duplication and outda
 ## 2026-07-14 14:41:15
 
 Commit all changes grouped into sensible commits. Then lets proceed with stage 2
+
+---
+## 2026-07-14 15:28:41
+
+continue with 2b
+
+---
+## 2026-07-14 22:01:03
+
+continue

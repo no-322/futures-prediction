@@ -250,46 +250,16 @@ def test_project_factories_build_fresh_seeded_models() -> None:
 
 
 # ---------------------------------------------------------------------------
-# No-flat scoring / training, thresholds (keep / include_flat / drop_flat_train)
+# Scoring (flat dropped upstream → whole block scored), thresholds
 # ---------------------------------------------------------------------------
 
-def test_include_flat_default_scores_no_flat(synthetic) -> None:
-    # With a keep mask, default (include_flat=False) scores only non-flat test rows.
-    X, y, ts = synthetic
-    rng = np.random.default_rng(0)
-    keep = rng.random(len(X)) > 0.3                       # ~70% non-flat
-    no_flat = walk_forward(X, y, ts, _CountingFactory(), train_months=3, test_months=1,
-                           step_months=1, keep=keep, name="nf", save=False)
-    full = walk_forward(X, y, ts, _CountingFactory(), train_months=3, test_months=1,
-                        step_months=1, keep=keep, include_flat=True, name="full",
-                        save=False)
-    # n_test reflects the scored rows: fewer under no-flat than full.
-    nf_counts = [f["n_test"] for f in no_flat["per_fold"]]
-    full_counts = [f["n_test"] for f in full["per_fold"]]
-    assert all(a <= b for a, b in zip(nf_counts, full_counts))
-    assert sum(nf_counts) < sum(full_counts)
-
-
-def test_keep_none_scores_full_block(synthetic) -> None:
-    # Back-compat: without keep, every test row is scored (full block).
+def test_scores_full_block(synthetic) -> None:
+    # Flat is dropped upstream, so every test row is scored (full block).
     X, y, ts = synthetic
     res = walk_forward(X, y, ts, _CountingFactory(), train_months=3, test_months=1,
                        step_months=1, name="bc", save=False)
     folds = make_folds(ts, 3, 1, 1)
     assert [f["n_test"] for f in res["per_fold"]] == [fd.test_idx.size for fd in folds]
-
-
-def test_drop_flat_train_shrinks_train(synthetic) -> None:
-    X, y, ts = synthetic
-    keep = np.ones(len(X), dtype=bool)
-    keep[::5] = False                                     # every 5th row flat
-    factory = _CountingFactory()
-    res = walk_forward(X, y, ts, factory, train_months=3, test_months=1, step_months=1,
-                       keep=keep, drop_flat_train=True, name="dft", save=False)
-    folds = make_folds(ts, 3, 1, 1)
-    for f, fold in zip(res["per_fold"], folds):
-        assert f["n_train"] == int(keep[fold.train_idx].sum())   # flats dropped
-        assert f["n_train"] < fold.train_idx.size
 
 
 def test_predict_fn_threshold_applied(synthetic) -> None:
@@ -310,8 +280,7 @@ def test_predict_fn_threshold_applied(synthetic) -> None:
 
     thr_fn = lambda m, Xte: (m.predict_proba(Xte)[:, 1] >= 0.5).astype(int)
     res = walk_forward(X, y, ts, _ProbaFactory(), train_months=3, test_months=1,
-                       step_months=1, predict_fn=thr_fn, include_flat=True, name="thr",
-                       save=False)
+                       step_months=1, predict_fn=thr_fn, name="thr", save=False)
     # proba=0.7 ≥ 0.5 → all predicted 1; default predict would give all 0.
     d = np.load(res["npz_path"]) if res["npz_path"] else None
     assert res["n_folds"] > 0
@@ -351,15 +320,13 @@ def test_fold_transform_appends_column(synthetic) -> None:
 def test_fold_transform_gate_restricts_scoring(synthetic) -> None:
     # A test_gate from fold_transform narrows scoring; coverage/n_eligible are reported.
     X, y, ts = synthetic
-    keep = np.ones(len(X), dtype=bool)
 
     def ft(full_train_idx, test_idx):
         gate = (test_idx % 2 == 0)                      # keep ~half the test bars
         return X.iloc[full_train_idx], X.iloc[test_idx], gate
 
     res = walk_forward(X, y, ts, _CountingFactory(), train_months=3, test_months=1,
-                       step_months=1, keep=keep, fold_transform=ft, name="gate",
-                       save=False)
+                       step_months=1, fold_transform=ft, name="gate", save=False)
     for f in res["per_fold"]:
         assert "coverage" in f and "n_eligible" in f
         assert f["n_test"] <= f["n_eligible"]
