@@ -826,3 +826,8 @@ continue
 ## 2026-07-15 04:12:42
 
 continue
+
+---
+## 2026-07-15 04:24:16
+
+continue with 2g, add AUM% to both leaderboard

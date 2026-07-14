@@ -45,7 +45,7 @@ def test_rank_models_returns_sorted(cfg: dict) -> None:
         pytest.skip("raw data file not present")
     rows = rank_models(cfg)
     assert isinstance(rows, list)
-    for stem, name, acc, recall, mcc in rows:
+    for stem, name, acc, recall, mcc, aum in rows:
         assert isinstance(stem, str) and isinstance(name, str)
         assert 0.0 <= acc <= 1.0
     # Sorted by (accuracy, mcc) descending.
@@ -59,7 +59,7 @@ def test_leaderboard_writes_file(cfg: dict) -> None:
     leaderboard(cfg)
     assert _LEADERBOARD_PATH.exists()
     text = _LEADERBOARD_PATH.read_text()
-    assert "| Model | Accuracy | Recall | MCC |" in text
+    assert "| Model | Accuracy | Recall | MCC | AUM % |" in text
     assert "single test set" in text.lower()
 
 

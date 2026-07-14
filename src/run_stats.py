@@ -240,12 +240,25 @@ def _leaderboard_name(stem: str, registry: dict[str, str]) -> str:
     return stem
 
 
-def _test_reference(cfg: dict) -> tuple[int, np.ndarray]:
-    """(test length, y_true) for the flat-free test split — the leaderboard reference."""
+def _aum_pct(y_pred: np.ndarray, returns: np.ndarray) -> float:
+    """% increase in AUM from the compounding long/short backtest (= total_return·100)."""
+    bt = statistics.backtest(np.asarray(y_pred), np.asarray(returns))
+    return float(bt["total_return"]) * 100.0
+
+
+def _test_reference(cfg: dict) -> tuple[int, np.ndarray, np.ndarray]:
+    """(test length, y_true, per-bar returns) for the flat-free test split."""
+    from src.labels import build_labels, drop_flat
+    from src.features import build_features
     train_size = cfg["data"].get("train_size", 0.5)
-    _, _, _, y_test = _build_dataset(Path(cfg["data"]["path"]), train_size)
-    y = y_test.to_numpy()
-    return int(len(y)), y
+    df = load_raw(Path(cfg["data"]["path"]))
+    feats = build_features(df)
+    raw = df.iloc[4:].reset_index(drop=True)
+    feats, raw = drop_flat(feats, raw)
+    _, raw_test = split(raw, train_size=train_size)
+    y = build_labels(raw_test).to_numpy()
+    returns = ((raw_test["Close"] - raw_test["Open"]) / raw_test["Open"]).to_numpy()
+    return int(len(y)), y, returns
 
 
 def rank_models(cfg: dict) -> list[tuple[str, str, float, float, float]]:
@@ -257,11 +270,11 @@ def rank_models(cfg: dict) -> list[tuple[str, str, float, float, float]]:
     descending. Sets whose length differs from the current test split are skipped.
 
     Returns:
-        List of (stem, display_name, accuracy, recall, mcc), best first.
+        List of (stem, display_name, accuracy, recall, mcc, aum_pct), best first.
     """
     from src import backtest
 
-    n_total, _ = _test_reference(cfg)
+    n_total, _, returns = _test_reference(cfg)
     registry = backtest._build_registry()
     proc = Path("data/processed")
 
@@ -275,8 +288,9 @@ def rank_models(cfg: dict) -> list[tuple[str, str, float, float, float]]:
             continue
         res = statistics.compute(d["y_true"], d["y_pred"])
         recall = res["per_class"].get(1, {}).get("recall", float("nan"))
+        aum = _aum_pct(d["y_pred"], returns)
         rows.append((stem, _leaderboard_name(stem, registry),
-                     res["accuracy"], float(recall), res["mcc"]))
+                     res["accuracy"], float(recall), res["mcc"], aum))
 
     rows.sort(key=lambda r: (r[2], r[4]), reverse=True)
     return rows
@@ -288,7 +302,7 @@ def leaderboard(cfg: dict) -> None:
     A table from rank_models(): accuracy, recall, MCC on the flat-free 50/50 test set,
     sorted by accuracy then MCC. Length-mismatched sets are skipped and listed.
     """
-    n_total, _ = _test_reference(cfg)
+    n_total, _, _ = _test_reference(cfg)
     rows = rank_models(cfg)
     ranked_stems = {r[0] for r in rows}
     skipped = [
@@ -307,11 +321,12 @@ def leaderboard(cfg: dict) -> None:
         lines.append("- Excluded (length mismatch / non-binary): "
                      + ", ".join(f"`{s}`" for s in sorted(skipped)) + ".\n")
     lines += [
-        "\n| Model | Accuracy | Recall | MCC |\n",
-        "|-------|----------|--------|-----|\n",
+        "*AUM %* = total return of the compounding long/short backtest on the test bars.\n",
+        "\n| Model | Accuracy | Recall | MCC | AUM % |\n",
+        "|-------|----------|--------|-----|-------|\n",
     ]
-    for _stem, name, acc, recall, mcc in rows:
-        lines.append(f"| {name} | {acc:.4f} | {recall:.4f} | {mcc:.4f} |\n")
+    for _stem, name, acc, recall, mcc, aum in rows:
+        lines.append(f"| {name} | {acc:.4f} | {recall:.4f} | {mcc:.4f} | {aum:+.1f}% |\n")
 
     _LEADERBOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
     _LEADERBOARD_PATH.write_text("".join(lines))
@@ -355,7 +370,7 @@ class _AlwaysUp:
 
 
 def _wf_xy(cfg: dict, featset: str):
-    """Flat-free (X, y, timestamps) for a feature set — the walk-forward input."""
+    """Flat-free (X, y, timestamps, returns) for a feature set — walk-forward input."""
     from src.labels import build_labels, drop_flat
     df = load_raw(Path(cfg["data"]["path"]))
     X = _featset_builder(featset)(df)
@@ -363,7 +378,8 @@ def _wf_xy(cfg: dict, featset: str):
     X, raw_align = drop_flat(X, raw_align)
     y = build_labels(raw_align)
     ts = raw_align["Date and Time"].reset_index(drop=True)
-    return X, y, ts
+    returns = ((raw_align["Close"] - raw_align["Open"]) / raw_align["Open"]).to_numpy()
+    return X, y, ts, returns
 
 
 def walkforward_curated(cfg: dict) -> None:
@@ -380,16 +396,16 @@ def walkforward_curated(cfg: dict) -> None:
     tmp = _PROC / "_wf_curated_tmp" / "model.joblib"
 
     for featset in _WF_FEATSETS:
-        X, y, ts = _wf_xy(cfg, featset)
+        X, y, ts, rets = _wf_xy(cfg, featset)
         for algo in _WF_ALGOS:
             factory = walkforward.module_factory(
                 modules[algo], model_params(cfg, algo), tmp)
             print(f"  walk-forward {algo} on {featset}")
-            walkforward.walk_forward(X, y, ts, factory, config=cfg,
+            walkforward.walk_forward(X, y, ts, factory, config=cfg, returns=rets,
                                      name=f"wf_{featset}_{algo}")
     # Always-up baseline (feature-set independent — use v1's rows).
-    X, y, ts = _wf_xy(cfg, "v1")
-    walkforward.walk_forward(X, y, ts, (lambda: _AlwaysUp()), config=cfg,
+    X, y, ts, rets = _wf_xy(cfg, "v1")
+    walkforward.walk_forward(X, y, ts, (lambda: _AlwaysUp()), config=cfg, returns=rets,
                              name="wf_baseline_alwaysup")
 
 
@@ -416,26 +432,81 @@ def leaderboard_walkforward(cfg: dict, proc: Path = _PROC,
         recall = res["per_class"].get(1, {}).get("recall", float("nan"))
         won = (int(np.sum(accs > base_acc)) if base_acc is not None
                and len(base_acc) == len(accs) else None)
+        aum = _aum_pct(d["y_pred"], d["returns"]) if "returns" in d else float("nan")
         name = stem[len("wf_"):]
         rows.append((name, float(np.nanmean(accs)), float(np.nanstd(accs)),
-                     float(recall), won, len(accs)))
+                     float(recall), won, len(accs), aum))
 
     rows.sort(key=lambda r: r[1], reverse=True)
     lines = [
         "# Walk-Forward Leaderboard\n\n",
         "Rolling walk-forward (3-month train / 1-month test, from `config.yaml`) over the "
         "flat-free modelling set. **Ranked by mean fold accuracy.** *Folds won* = folds "
-        "beating the always-up baseline (the regime-stability signal).\n\n",
-        "| Model | Mean acc ± std | Folds won | Recall |\n",
-        "|-------|----------------|-----------|--------|\n",
+        "beating the always-up baseline; *AUM %* = total return of the compounding "
+        "long/short backtest over the concatenated walk-forward test bars.\n\n",
+        "| Model | Mean acc ± std | Folds won | Recall | AUM % |\n",
+        "|-------|----------------|-----------|--------|-------|\n",
     ]
-    for name, mean, std, recall, won, nfolds in rows:
+    for name, mean, std, recall, won, nfolds, aum in rows:
         won_s = f"{won}/{nfolds}" if won is not None else "—"
         lines.append(f"| {name} | {mean * 100:.1f}% ± {std * 100:.1f}% "
-                     f"| {won_s} | {recall:.4f} |\n")
+                     f"| {won_s} | {recall:.4f} | {aum:+.1f}% |\n")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("".join(lines))
     print(f"Walk-forward leaderboard ({len(rows)} models) → {out}")
+
+
+_RESULTS_PATH = Path("docs/results.md")
+
+
+def walkforward_results(cfg: dict, proc: Path = _PROC,
+                        out: Path = _RESULTS_PATH) -> None:
+    """Write ``docs/results.md`` — per-model walk-forward report (the eval format).
+
+    For each ``wf_{featset}_{algo}`` set: mean ± std accuracy across folds, recall,
+    confusion matrix, Δ vs the always-up baseline, and backtest AUM %. Flat is dropped
+    globally, so all metrics are on decisive up/down bars.
+    """
+    base_npz = proc / "wf_baseline_alwaysup_predictions.npz"
+    base_mean = (float(np.nanmean(np.load(base_npz)["accuracies"]))
+                 if base_npz.exists() else None)
+
+    blocks = [
+        "# Model Evaluation Results — walk-forward\n\n",
+        "Rolling walk-forward (3-month train / 1-month test). Each model reports the "
+        "mean ± std across folds; Δ is vs the always-up baseline; AUM % is the "
+        "compounding backtest total return.\n",
+    ]
+    for npz in sorted(proc.glob("wf_*_predictions.npz")):
+        stem = npz.name[: -len("_predictions.npz")]
+        if stem == "wf_baseline_alwaysup":
+            continue
+        d = np.load(npz)
+        accs = d["accuracies"]
+        res = statistics.compute(d["y_true"], d["y_pred"], name=stem[len("wf_"):])
+        recall = res["per_class"].get(1, {}).get("recall", float("nan"))
+        cm = res["confusion_matrix"]
+        mean = float(np.nanmean(accs))
+        delta = (mean - base_mean) * 100 if base_mean is not None else float("nan")
+        aum = _aum_pct(d["y_pred"], d["returns"]) if "returns" in d else float("nan")
+        blocks.append(
+            f"\n---\n\n## {stem[len('wf_'):]}\n\n"
+            f"- **Accuracy:** {mean * 100:.1f}% ± {float(np.nanstd(accs)) * 100:.1f}% "
+            f"across {len(accs)} folds (range "
+            f"{float(np.nanmin(accs)) * 100:.1f}–{float(np.nanmax(accs)) * 100:.1f}%)\n"
+            f"- **Recall (up):** {recall:.4f}\n"
+            f"- **Δ vs always-up baseline:** {delta:+.1f} pp\n"
+            f"- **Backtest AUM %:** {aum:+.1f}%\n\n"
+            f"Confusion matrix (rows=actual, cols=predicted):\n\n"
+            f"| | Pred 0 | Pred 1 |\n|---|---|---|\n"
+            f"| **Actual 0** | {cm[0][0]:,} | {cm[0][1]:,} |\n"
+            f"| **Actual 1** | {cm[1][0]:,} | {cm[1][1]:,} |\n"
+        )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("".join(blocks))
+    print(f"Walk-forward results → {out}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compute stats for all binary models")
     parser.add_argument(
@@ -471,6 +542,7 @@ def main() -> None:
         walkforward_curated(cfg)
     if "lbwf" in args.sections:
         leaderboard_walkforward(cfg)
+        walkforward_results(cfg)
 
 
 if __name__ == "__main__":

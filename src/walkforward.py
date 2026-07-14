@@ -218,6 +218,7 @@ def walk_forward(
         [np.ndarray, np.ndarray],
         tuple[pd.DataFrame, pd.DataFrame, np.ndarray | None],
     ] | None = None,
+    returns: np.ndarray | None = None,
     name: str = "wf",
     save: bool = True,
 ) -> WalkForwardResult:
@@ -289,6 +290,7 @@ def walk_forward(
     y_pred_all: list[np.ndarray] = []
     fold_id_all: list[np.ndarray] = []
     scored_all: list[np.ndarray] = []
+    returns_all: list[np.ndarray] = []
     accuracies: list[float] = []
 
     for i, fold in enumerate(folds):
@@ -330,6 +332,8 @@ def walk_forward(
         y_pred_all.append(y_hat)
         fold_id_all.append(np.full(y_te_arr.shape, i, dtype=int))
         scored_all.append(score_mask)
+        if returns is not None:
+            returns_all.append(np.asarray(returns)[test_idx])
         per_fold.append(
             {
                 "fold": i,
@@ -350,8 +354,7 @@ def walk_forward(
     if save:
         _PROC.mkdir(parents=True, exist_ok=True)
         npz_path = str(_PROC / f"walkforward_{name}_predictions.npz")
-        np.savez(
-            npz_path,
+        payload = dict(
             y_true=np.concatenate(y_true_all),
             y_pred=np.concatenate(y_pred_all),
             fold_id=np.concatenate(fold_id_all),
@@ -360,6 +363,9 @@ def walk_forward(
             test_starts=np.array([f["test_start"] for f in per_fold]),
             test_ends=np.array([f["test_end"] for f in per_fold]),
         )
+        if returns is not None:
+            payload["returns"] = np.concatenate(returns_all)
+        np.savez(npz_path, **payload)
 
     return WalkForwardResult(
         name=name,
