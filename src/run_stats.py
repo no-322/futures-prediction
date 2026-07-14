@@ -336,6 +336,106 @@ def _featset_builder(featset: str) -> "Callable":
         from src.features_v1_rel import build_features_v1_rel
         return build_features_v1_rel
     raise ValueError(f"Unknown featset: {featset!r}")
+
+
+# Curated core evaluated by walk-forward: 3 algos × 4 feature pipelines.
+_WF_ALGOS = ("logistic", "rf", "gbm")
+_WF_FEATSETS = ("v1", "v1rel", "v2", "v3")
+_WF_LEADERBOARD_PATH = Path("docs/notes/leaderboard-walk-forward.md")
+
+
+class _AlwaysUp:
+    """Naive walk-forward baseline estimator: predict up (1) for every bar."""
+
+    def fit(self, X, y):  # noqa: D401 - sklearn-style stub
+        return self
+
+    def predict(self, X):
+        return np.ones(len(X), dtype=int)
+
+
+def _wf_xy(cfg: dict, featset: str):
+    """Flat-free (X, y, timestamps) for a feature set — the walk-forward input."""
+    from src.labels import build_labels, drop_flat
+    df = load_raw(Path(cfg["data"]["path"]))
+    X = _featset_builder(featset)(df)
+    raw_align = df.iloc[4:].reset_index(drop=True)
+    X, raw_align = drop_flat(X, raw_align)
+    y = build_labels(raw_align)
+    ts = raw_align["Date and Time"].reset_index(drop=True)
+    return X, y, ts
+
+
+def walkforward_curated(cfg: dict) -> None:
+    """Run rolling walk-forward for the curated core + the always-up baseline.
+
+    For each (feature set × algorithm) and the naive always-up baseline, fit fresh per
+    fold and persist per-fold predictions as ``wf_{featset}_{algo}`` (Rule 7). These feed
+    ``leaderboard_walkforward``.
+    """
+    import src.walkforward as walkforward
+    from src.models import gbm, logistic, rf
+
+    modules = {"logistic": logistic, "rf": rf, "gbm": gbm}
+    tmp = _PROC / "_wf_curated_tmp" / "model.joblib"
+
+    for featset in _WF_FEATSETS:
+        X, y, ts = _wf_xy(cfg, featset)
+        for algo in _WF_ALGOS:
+            factory = walkforward.module_factory(
+                modules[algo], model_params(cfg, algo), tmp)
+            print(f"  walk-forward {algo} on {featset}")
+            walkforward.walk_forward(X, y, ts, factory, config=cfg,
+                                     name=f"wf_{featset}_{algo}")
+    # Always-up baseline (feature-set independent — use v1's rows).
+    X, y, ts = _wf_xy(cfg, "v1")
+    walkforward.walk_forward(X, y, ts, (lambda: _AlwaysUp()), config=cfg,
+                             name="wf_baseline_alwaysup")
+
+
+def leaderboard_walkforward(cfg: dict, proc: Path = _PROC,
+                            out: Path = _WF_LEADERBOARD_PATH) -> None:
+    """Write ``docs/notes/leaderboard-walk-forward.md`` ranked by mean fold accuracy.
+
+    Reads every ``wf_*_predictions.npz`` (per-fold ``accuracies`` + concatenated
+    ``y_true``/``y_pred``), reports mean ± std accuracy across folds, recall (class 1),
+    and **folds won** = number of folds the model beats the always-up baseline. Ranked by
+    mean accuracy; the folds-won column is the regime-stability signal.
+    """
+    base_npz = proc / "wf_baseline_alwaysup_predictions.npz"
+    base_acc = (np.load(base_npz)["accuracies"] if base_npz.exists() else None)
+
+    rows = []
+    for npz in sorted(proc.glob("wf_*_predictions.npz")):
+        stem = npz.name[: -len("_predictions.npz")]
+        if stem == "wf_baseline_alwaysup":
+            continue
+        d = np.load(npz)
+        accs = d["accuracies"]
+        res = statistics.compute(d["y_true"], d["y_pred"])
+        recall = res["per_class"].get(1, {}).get("recall", float("nan"))
+        won = (int(np.sum(accs > base_acc)) if base_acc is not None
+               and len(base_acc) == len(accs) else None)
+        name = stem[len("wf_"):]
+        rows.append((name, float(np.nanmean(accs)), float(np.nanstd(accs)),
+                     float(recall), won, len(accs)))
+
+    rows.sort(key=lambda r: r[1], reverse=True)
+    lines = [
+        "# Walk-Forward Leaderboard\n\n",
+        "Rolling walk-forward (3-month train / 1-month test, from `config.yaml`) over the "
+        "flat-free modelling set. **Ranked by mean fold accuracy.** *Folds won* = folds "
+        "beating the always-up baseline (the regime-stability signal).\n\n",
+        "| Model | Mean acc ± std | Folds won | Recall |\n",
+        "|-------|----------------|-----------|--------|\n",
+    ]
+    for name, mean, std, recall, won, nfolds in rows:
+        won_s = f"{won}/{nfolds}" if won is not None else "—"
+        lines.append(f"| {name} | {mean * 100:.1f}% ± {std * 100:.1f}% "
+                     f"| {won_s} | {recall:.4f} |\n")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("".join(lines))
+    print(f"Walk-forward leaderboard ({len(rows)} models) → {out}")
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compute stats for all binary models")
     parser.add_argument(
@@ -344,12 +444,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--sections", nargs="+",
-        choices=["a", "c", "d", "lb"],
+        choices=["a", "c", "d", "lb", "wf", "lbwf"],
         default=["a", "c", "d"],
-        help="Which sections to run (a=production stats, c=no-flat 20-feat suite + HMM, "
-             "d=49-feature binary suites, lb=leaderboard.md across all saved prediction "
-             "sets). The lb section reads existing .npz (no retraining), so run a/c/d "
-             "first. Default: a c d.",
+        help="Which sections to run: a=production stats, c=no-flat 20-feat suite + HMM, "
+             "d=49-feature binary suites, lb=leaderboard.md (single test set), "
+             "wf=walk-forward the curated core (logistic/rf/gbm × v1/v1rel/v2/v3 + "
+             "always-up baseline), lbwf=leaderboard-walk-forward.md from the wf_* sets. "
+             "lb/lbwf read existing .npz (no retraining). Default: a c d.",
     )
     args = parser.parse_args()
 
@@ -366,6 +467,10 @@ def main() -> None:
         section_d(cfg, skip_existing=args.skip_existing)
     if "lb" in args.sections:
         leaderboard(cfg)
+    if "wf" in args.sections:
+        walkforward_curated(cfg)
+    if "lbwf" in args.sections:
+        leaderboard_walkforward(cfg)
 
 
 if __name__ == "__main__":
