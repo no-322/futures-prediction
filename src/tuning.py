@@ -20,7 +20,7 @@ prediction set is persisted to ``data/processed/`` (Rule 7).
 
 Run with::
 
-    python -m src.tuning --algos baseline rf gbm svm --featset v2
+    python -m src.tuning --algos baseline rf gbm --featset v2
     python -m src.tuning --algos rf --featset v3 --move-weight --tune-threshold
 """
 from __future__ import annotations
@@ -40,24 +40,18 @@ from src.labels import build_labels, flat_mask
 from src.models import baseline, rf
 from src.models.gbm import predict as gbm_predict
 from src.models.gbm import train as gbm_train
-from src.models.svm import predict as svm_predict
-from src.models.svm import train as svm_train
 from src.split import split
 
 _PROC = Path("data/processed")
 _TMP = _PROC / "_tuning_tmp"
 _DOCS = Path("docs/notes")
 
-_ALGOS: tuple[str, ...] = ("baseline", "rf", "gbm", "svm")
+_ALGOS: tuple[str, ...] = ("baseline", "rf", "gbm")
 _DISPLAY = {
     "baseline": "Logistic Regression",
     "rf": "Random Forest",
     "gbm": "Gradient Boosting (XGBoost)",
-    "svm": "SVM (RBF kernel)",
 }
-
-# SVM RBF training is O(n²); cap the inner-train sample during the sweep.
-_SVM_SWEEP_N = 30_000
 
 # Curated, seed-42 grids. Lists of explicit param dicts (not full cross-products)
 # to bound runtime. RF/GBM grids attack the overfit diagnosed on the no-flat test
@@ -91,12 +85,6 @@ _GRIDS: dict[str, list[dict]] = {
         {"n_estimators": 400, "max_depth": 4, "learning_rate": 0.05,
          "reg_lambda": 1.0, "reg_alpha": 0.0, "min_child_weight": 1},
     ],
-    "svm": [
-        {"C": 0.5, "gamma": "scale"},
-        {"C": 2.0, "gamma": "scale"},
-        {"C": 1.0, "gamma": 0.05},
-        {"C": 2.0, "gamma": 0.01},
-    ],
 }
 
 def _feature_fn(featset: str) -> Callable[[pd.DataFrame], pd.DataFrame]:
@@ -128,9 +116,6 @@ def _fit(algo: str, X: pd.DataFrame, y: pd.Series, params: dict,
     if algo == "gbm":
         return gbm_train(X, y, params=params, save_path=save_path,
                          sample_weight=sample_weight)
-    if algo == "svm":
-        return svm_train(X, y, params=params, save_path=save_path,
-                         sample_weight=sample_weight)
     raise ValueError(f"Unknown algo: {algo!r}")
 
 
@@ -142,26 +127,20 @@ def _predict(algo: str, model: Any, X: pd.DataFrame) -> np.ndarray:
         return rf.predict(model, X)
     if algo == "gbm":
         return gbm_predict(model, X)
-    if algo == "svm":
-        return svm_predict(model, X)
     raise ValueError(f"Unknown algo: {algo!r}")
 
 
 def _scores(algo: str, model: Any, X: pd.DataFrame) -> np.ndarray:
     """Return continuous decision scores for threshold tuning.
 
-    Probabilistic models (baseline/rf/gbm) return P(class=1); the RBF SVM returns
-    the signed distance to the hyperplane (``decision_function``) since it is fit
-    with probability=False.
+    Probabilistic models (baseline/rf/gbm) return P(class=1).
     """
-    if algo == "svm":
-        return model["clf"].decision_function(model["scaler"].transform(X))
     return model.predict_proba(X)[:, 1]
 
 
 def _default_threshold(algo: str) -> float:
-    """Default decision threshold: 0.0 for the SVM margin, else 0.5 probability."""
-    return 0.0 if algo == "svm" else 0.5
+    """Default decision threshold: 0.5 probability."""
+    return 0.5
 
 
 def predict_with_threshold(
@@ -171,12 +150,12 @@ def predict_with_threshold(
 
     With ``threshold=None`` this is the plain label prediction (``_predict``).
     Otherwise labels are ``_scores(...) >= threshold`` — probability ≥ threshold
-    for baseline/rf/gbm, or signed SVM margin ≥ threshold for the RBF SVM. Used by
-    the GUI to apply the threshold stored in ``tuned_params_{featset}.json``.
+    for baseline/rf/gbm. Used by the GUI to apply the threshold stored in
+    ``tuned_params_{featset}.json``.
 
     Args:
-        algo: One of baseline/rf/gbm/svm.
-        model: A fitted model (or SVMModel dict for svm).
+        algo: One of baseline/rf/gbm.
+        model: A fitted model.
         X: Feature matrix to score.
         threshold: Tuned decision threshold; None → default label prediction.
 
@@ -311,7 +290,7 @@ def grid_search(
     """Grid-search one algorithm; score combos by no-flat validation accuracy.
 
     Args:
-        algo: One of baseline/rf/gbm/svm.
+        algo: One of baseline/rf/gbm.
         sel: SelectionSplit (inner-train + no-flat validation).
         grid: Param dicts to try; defaults to the module's curated grid.
 
@@ -323,11 +302,6 @@ def grid_search(
     _TMP.mkdir(parents=True, exist_ok=True)
 
     X_inner, y_inner = sel.X_inner, sel.y_inner
-    if algo == "svm" and len(X_inner) > _SVM_SWEEP_N:
-        rng = np.random.RandomState(42)
-        idx = np.sort(rng.choice(len(X_inner), _SVM_SWEEP_N, replace=False))
-        X_inner = X_inner.iloc[idx].reset_index(drop=True)
-        y_inner = y_inner.iloc[idx].reset_index(drop=True)
 
     results: list[tuple[dict, float]] = []
     best_params, best_acc = grid[0], -1.0

@@ -1,11 +1,11 @@
 """Compute standardised statistics for all binary models.
 
-Section A — Production models (baseline, rf, gbm, svm):
+Section A — Production models (baseline, rf, gbm):
   Load existing joblibs, infer on the 50% test set (no retraining), save
   predictions, write docs/notes/all_stats.md.
 
 Section C — No-flat binary suite (20-feat) + HMM-regime binary:
-  Train baseline/rf/gbm/svm with flat (Close==Open) rows removed from training,
+  Train baseline/rf/gbm with flat (Close==Open) rows removed from training,
   plus the HMM-regime binary model; write docs/notes/binary_noflat_stats.md.
 
 Section D — 49-feature binary suites (flat-included + no-flat):
@@ -69,8 +69,6 @@ _PROD_MODELS = {
                  Path("data/processed/rf_model.joblib")),
     "gbm":      ("Gradient Boosting (XGBoost)",
                  Path("data/processed/gbm_model.joblib")),
-    "svm":      ("SVM (RBF kernel)",
-                 Path("data/processed/svm_model.joblib")),
 }
 
 _REPORT_PATH = Path("docs/notes/all_stats.md")
@@ -100,7 +98,6 @@ def section_a(cfg: dict) -> list[StatsResult]:
     """Load production joblibs, predict on the test set, compute stats."""
     from src.models import baseline, rf
     from src.models.gbm import load as gbm_load, predict as gbm_predict
-    from src.models.svm import load as svm_load, predict as svm_predict
 
     train_size = cfg["data"].get("train_size", 0.5)
     data_path  = Path(cfg["data"]["path"])
@@ -113,7 +110,6 @@ def section_a(cfg: dict) -> list[StatsResult]:
         "baseline": (baseline.load,   baseline.predict),
         "rf":       (rf.load,         rf.predict),
         "gbm":      (gbm_load,        gbm_predict),
-        "svm":      (svm_load,        svm_predict),
     }
 
     results: list[StatsResult] = []

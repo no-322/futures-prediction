@@ -22,14 +22,13 @@ import yaml
 ALGO_DISPLAY: dict[str, str] = {
     "rf":       "Random Forest",
     "gbm":      "Gradient Boosting",
-    "svm":      "SVM",
     "baseline": "Logistic Regression",
     "hmm":      "HMM-regime",
 }
 DISPLAY_ALGO: dict[str, str] = {v: k for k, v in ALGO_DISPLAY.items()}
 
-# Model dropdown for both tabs (4 base classifiers + HMM-regime).
-MODEL_OPTIONS = ["Random Forest", "Gradient Boosting", "SVM",
+# Model dropdown for both tabs (3 base classifiers + HMM-regime).
+MODEL_OPTIONS = ["Random Forest", "Gradient Boosting",
                  "Logistic Regression", "HMM-regime"]
 _FEATURE_LABELS = {"v1": "v1 — 20 features", "v2": "v2 — 49 features",
                    "v3": "v3 — 48 features (stationary)"}
@@ -66,7 +65,6 @@ REQUIRED_COLS = {"Date and Time", "Open", "Close", "High", "Low", "VWAP"}
 MODEL_PATHS: dict[str, Path] = {
     "rf":       Path("data/processed/rf_model.joblib"),
     "gbm":      Path("data/processed/gbm_model.joblib"),
-    "svm":      Path("data/processed/svm_model.joblib"),
     "baseline": Path("data/processed/baseline_model.joblib"),
 }
 
@@ -217,18 +215,6 @@ def _show_eval(y_true: np.ndarray | None, y_pred: np.ndarray) -> None:
     st.markdown(_stats.format_markdown(res))
 
 
-# --- SVM-inference guards (RBF predict is O(n_support_vectors × n_rows)) ----
-
-_SVM_PREDICT_RATE = 2.3e8  # kernel-dim ops/s, calibrated: 253k SV × 49 feat × 1196 rows ≈ 64.5 s
-
-
-@st.cache_resource(show_spinner=False)
-def _load_svm_cached(path_str: str):
-    """Load an SVM joblib once (cached across reruns — these files are large)."""
-    from src.models.svm import load as svm_load  # noqa: E402
-    return svm_load(Path(path_str))
-
-
 @st.cache_data(show_spinner=False)
 def _test_split_arrays(
     data_path: str, train_size: float, _mtime: float
@@ -253,36 +239,6 @@ def _test_split_arrays(
                    / raw_test["Open"]).to_numpy()
     timestamps = raw_test["Date and Time"].to_numpy()
     return bar_returns, timestamps
-
-
-def _svm_sv_count(model) -> tuple[int, int]:
-    """(n_support_vectors, n_features) for a loaded SVMModel bundle."""
-    sv = model["clf"].support_vectors_
-    return int(sv.shape[0]), int(sv.shape[1])
-
-
-def _estimate_svm_seconds(n_sv: int, n_rows: int, n_feat: int) -> float:
-    """Rough single-threaded RBF-predict time estimate (seconds)."""
-    return n_sv * n_rows * n_feat / _SVM_PREDICT_RATE
-
-
-def _fmt_duration(seconds: float) -> str:
-    if seconds < 90:
-        return f"~{seconds:.0f}s"
-    return f"~{seconds / 60:.1f} min"
-
-
-def _predict_chunked(predict_fn, features, label: str, chunk: int = 2000) -> np.ndarray:
-    """Predict in row-chunks with a live progress bar (cancellable between chunks)."""
-    n = len(features)
-    out = np.empty(n, dtype=int)
-    bar = st.progress(0.0, text=f"{label} 0/{n:,}")
-    for start in range(0, n, chunk):
-        end = min(start + chunk, n)
-        out[start:end] = predict_fn(features.iloc[start:end])
-        bar.progress(end / n, text=f"{label} {end:,}/{n:,}")
-    bar.empty()
-    return out
 
 
 def _render_hyperparams(algo: str, current: dict) -> dict:
@@ -346,30 +302,6 @@ def _render_hyperparams(algo: str, current: dict) -> dict:
         p["objective"]        = str(current.get("objective", "binary:logistic"))
         p["eval_metric"]      = str(current.get("eval_metric", "logloss"))
         p["n_jobs"]           = -1
-
-    elif algo == "svm":
-        st.warning(
-            "SVM training can take 2–4 hours on large datasets. "
-            "Consider reducing the training size percentage below 20%."
-        )
-        p["C"] = st.number_input(
-            "C (regularization)", min_value=0.001, max_value=1000.0,
-            value=float(current.get("C", 1.0)), step=0.1, format="%.3f",
-        )
-        p["kernel"] = st.selectbox(
-            "Kernel", ["rbf", "linear", "poly"],
-            index=["rbf", "linear", "poly"].index(current.get("kernel", "rbf")),
-        )
-        p["gamma"] = st.selectbox(
-            "Gamma", ["scale", "auto"],
-            index=0 if current.get("gamma", "scale") == "scale" else 1,
-        )
-        p["class_weight"] = "balanced"
-        p["cache_size"]   = st.number_input(
-            "Cache size (MB)", min_value=100, max_value=8000,
-            value=int(current.get("cache_size", 500)), step=100,
-        )
-        p["probability"] = False
 
     elif algo == "baseline":
         p["max_iter"] = st.number_input(
@@ -684,35 +616,6 @@ with tab_predict:
         min_value=0.0, value=0.0, step=0.0001, format="%.4f", key="pred_cost",
     )
 
-    # --- SVM is the only slow predictor: show a time estimate + row cap -----
-    svm_cap = 0
-    if p_algo == "svm" and p_available:
-        mpath_sel = _model_joblib(p_algo, p_feat, p_drop_flat, p_tuned)
-        try:
-            n_sv, n_feat = _svm_sv_count(_load_svm_cached(str(mpath_sel)))
-        except Exception:
-            n_sv, n_feat = 0, {"v2": 49, "v3": 48}.get(p_feat, 20)
-        per_row = _estimate_svm_seconds(n_sv, 1, n_feat) if n_sv else 0.0
-        # Default cap targets ~90 s of prediction time, rounded to 500 rows.
-        default_cap = (int(round(max(1000, 90 / per_row) / 500)) * 500
-                       if per_row else 25000)
-        st.warning(
-            f"RBF-SVM inference is slow — this model has **{n_sv:,} support vectors** "
-            f"(≈ {per_row * 1000:.1f} ms/row, single-threaded, not parallelisable). "
-            f"E.g. {default_cap:,} rows ≈ {_fmt_duration(per_row * default_cap)}; "
-            f"250,000 rows ≈ {_fmt_duration(per_row * 250_000)}."
-        )
-        svm_cap = int(st.number_input(
-            "Max rows to predict (SVM) — 0 = no cap (predict all rows)",
-            min_value=0, value=default_cap, step=500, key="svm_cap",
-            help="SVM predicts only the first N rows; statistics & backtest use that "
-                 "subset. Raise it or set 0 at your own time cost.",
-        ))
-        if svm_cap == 0:
-            st.error("No cap set — predicting all rows may take many minutes.")
-        else:
-            st.caption(f"Selected: {svm_cap:,} rows → est {_fmt_duration(per_row * svm_cap)}.")
-
     # --- file upload + validation ------------------------------------------
     uploaded_pred = st.file_uploader(
         "Upload prediction data (.csv)",
@@ -780,34 +683,21 @@ with tab_predict:
                     thr = (json.loads(tp.read_text())["models"]
                            .get(p_algo, {}).get("threshold"))
 
-            if p_algo == "svm":
-                # Capped + chunked (progress + cancellable) — RBF predict is slow.
-                if svm_cap and len(features) > svm_cap:
-                    st.info(f"Predicting the first {svm_cap:,} of {len(features):,} rows "
-                            "(SVM cap). Statistics & backtest use this subset.")
-                    features = features.iloc[:svm_cap]
-                _svm = _load_svm_cached(
-                    str(_model_joblib(p_algo, p_feat, p_drop_flat, p_tuned)))
-                preds = _predict_chunked(
-                    lambda X: _tuning.predict_with_threshold("svm", _svm, X, thr),
-                    features, label="SVM predicting", chunk=2000,
-                )
-            else:
-                with st.spinner(f"Predicting with {p_variant}…"):
-                    if p_algo == "hmm":
-                        from src.models import regime_binary            # noqa: E402
-                        preds = regime_binary.predict(features, regime_binary.load_bundle())
-                    else:
-                        mpath = _model_joblib(p_algo, p_feat, p_drop_flat, p_tuned)
-                        from src.models import baseline, rf             # noqa: E402
-                        from src.models.gbm import load as gbm_load     # noqa: E402
-                        loaders = {"baseline": baseline.load, "rf": rf.load,
-                                   "gbm": gbm_load}
-                        model = loaders[p_algo](mpath)
-                        preds = _tuning.predict_with_threshold(
-                            p_algo, model, features, thr)
+            with st.spinner(f"Predicting with {p_variant}…"):
+                if p_algo == "hmm":
+                    from src.models import regime_binary            # noqa: E402
+                    preds = regime_binary.predict(features, regime_binary.load_bundle())
+                else:
+                    mpath = _model_joblib(p_algo, p_feat, p_drop_flat, p_tuned)
+                    from src.models import baseline, rf             # noqa: E402
+                    from src.models.gbm import load as gbm_load     # noqa: E402
+                    loaders = {"baseline": baseline.load, "rf": rf.load,
+                               "gbm": gbm_load}
+                    model = loaders[p_algo](mpath)
+                    preds = _tuning.predict_with_threshold(
+                        p_algo, model, features, thr)
 
-            # Align the raw slice to the predictions (handles the SVM row cap).
+            # Align the raw slice to the predictions.
             raw_align = raw_align.iloc[:len(preds)].reset_index(drop=True)
 
             # ground truth + per-bar returns (for the backtest)

@@ -1,6 +1,6 @@
 """Experiment 4 — Binary classification suite (configurable feature set + flat toggle).
 
-Trains the four original classifiers (baseline, rf, gbm, svm) on the canonical
+Trains the three classifiers (baseline, rf, gbm) on the canonical
 50/50 time-ordered split as binary up/down models. Two knobs select the variant:
   - feature set: v1 `build_features` (20-dim) or v2 `build_features_v2` (49-dim);
   - `drop_flat`: remove flat bars (Close == Open) from the *training* set only,
@@ -39,17 +39,14 @@ from src.load import load_raw
 from src.models import baseline, rf
 from src.models.gbm import predict as gbm_predict
 from src.models.gbm import train as gbm_train
-from src.models.svm import predict as svm_predict
-from src.models.svm import train as svm_train
 from src.split import split
 
 _PROC = Path("data/processed")
-_ALGOS: tuple[str, ...] = ("baseline", "rf", "gbm", "svm")
+_ALGOS: tuple[str, ...] = ("baseline", "rf", "gbm")
 BASE_DISPLAY: dict[str, str] = {
     "baseline": "Logistic Regression",
     "rf":       "Random Forest",
     "gbm":      "Gradient Boosting (XGBoost)",
-    "svm":      "SVM (RBF kernel)",
 }
 
 
@@ -128,8 +125,6 @@ def _train(algo: str, X: pd.DataFrame, y: pd.Series, params: dict, save_path: Pa
         return rf.train(X, y, params=params, save_path=save_path)
     if algo == "gbm":
         return gbm_train(X, y, params=params, save_path=save_path)
-    if algo == "svm":
-        return svm_train(X, y, params=params, save_path=save_path)
     raise ValueError(f"Unknown algo: {algo!r}")
 
 
@@ -141,8 +136,6 @@ def _predict(algo: str, model: Any, X: pd.DataFrame) -> np.ndarray:
         return rf.predict(model, X)
     if algo == "gbm":
         return gbm_predict(model, X)
-    if algo == "svm":
-        return svm_predict(model, X)
     raise ValueError(f"Unknown algo: {algo!r}")
 
 
@@ -154,12 +147,10 @@ def _feature_importance(
     """Return a ranked feature-importance table, or None if unavailable.
 
     rf/gbm expose ``feature_importances_``; baseline (logistic regression) uses
-    the absolute coefficient magnitude. SVM with an RBF kernel has no native
-    importance measure, so None is returned (permutation importance is O(n²)
-    here and is intentionally skipped).
+    the absolute coefficient magnitude. Any other model returns None.
 
     Args:
-        algo: One of 'baseline', 'rf', 'gbm', 'svm'.
+        algo: One of 'baseline', 'rf', 'gbm'.
         model: Fitted model artifact.
         feature_names: Column names of the training feature matrix.
 
@@ -202,7 +193,7 @@ def run(
 
     Args:
         config: Parsed config dict; defaults to load_config().
-        algos: Which algorithms to run (subset of baseline/rf/gbm/svm).
+        algos: Which algorithms to run (subset of baseline/rf/gbm).
         build_features_fn: Feature builder; defaults to v1 `build_features`.
         drop_flat: Drop `Close==Open` rows from training only (test untouched).
         prefix: Artifact filename prefix (e.g. 'exp_noflat', 'exp_v2').
@@ -225,9 +216,8 @@ def run(
         model_path = _PROC / f"{prefix}_{algo}_model.joblib"
         npz_path   = _PROC / f"{prefix}_{algo}_predictions.npz"
 
-        slow = "  (O(n²) — slow)" if algo == "svm" else ""
         print(f"  [{algo}] training on {len(X_train):,} rows × "
-              f"{X_train.shape[1]} features [{display_suffix}]{slow}...")
+              f"{X_train.shape[1]} features [{display_suffix}]...")
         model  = _train(algo, X_train, y_train, params, model_path)
         y_pred = _predict(algo, model, X_test)
 
@@ -241,7 +231,7 @@ def run(
             imp_df.to_csv(imp_path, index=False)
             print(f"    Importances → {imp_path}")
         else:
-            print("    Importances → skipped (RBF SVM has no native measure)")
+            print("    Importances → skipped (no native measure)")
 
         up_rate = float((y_pred == 1).mean())
         acc     = float((y_pred == y_true).mean())

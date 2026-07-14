@@ -191,8 +191,6 @@ if __name__ == "__main__":
     from src.models import baseline, rf
     from src.models.gbm import train as gbm_train
     from src.models.gbm import predict as gbm_predict
-    from src.models.svm import train as svm_train
-    from src.models.svm import predict as svm_predict
     from src.split import split
 
     df = load_raw(Path("data/raw/data.csv"))
@@ -213,8 +211,6 @@ if __name__ == "__main__":
     rf_model = rf.train(X_train, y_train)
     print("Training GBM...")
     gbm_model = gbm_train(X_train, y_train)
-    print("Training SVM (slow — O(n²))...")
-    svm_model = svm_train(X_train, y_train)
     print("Done. Writing results...")
 
     reports = [
@@ -223,7 +219,6 @@ if __name__ == "__main__":
         report("Logistic Regression", y_true, baseline.predict(lr_model, X_test), keep),
         report("Random Forest", y_true, rf.predict(rf_model, X_test), keep),
         report("Gradient Boosting (XGBoost)", y_true, gbm_predict(gbm_model, X_test), keep),
-        report("SVM (RBF kernel)", y_true, svm_predict(svm_model, X_test), keep),
     ]
 
     intro = (

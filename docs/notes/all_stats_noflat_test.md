@@ -87,32 +87,3 @@ Samples evaluated: 140,613
 | **Actual 0** | 69,490 | 4 |
 | **Actual 1** | 71,114 | 5 |
 
----
-
-## SVM (RBF kernel)
-
-Samples evaluated: 140,613
-
-### Scalar metrics
-
-| Metric | Value |
-|--------|-------|
-| Accuracy | 0.4941 |
-| Macro F1 | 0.4832 |
-| Weighted F1 | 0.4823 |
-| MCC | -0.0087 |
-
-### Per-class metrics
-
-| Class | Precision | Recall | F1 | Support |
-|-------|-----------|--------|----|---------|
-| 0 | 0.4910 | 0.6469 | 0.5583 | 69,494 |
-| 1 | 0.4998 | 0.3447 | 0.4080 | 71,119 |
-
-### Confusion matrix (rows = actual, cols = predicted)
-
-|  | Pred 0 | Pred 1 |
-|--|--|--|
-| **Actual 0** | 44,958 | 24,536 |
-| **Actual 1** | 46,601 | 24,518 |
-

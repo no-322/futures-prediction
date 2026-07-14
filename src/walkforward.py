@@ -21,8 +21,7 @@ Design:
 
 The harness accepts **any sklearn-style model** through a factory callable returning
 a fresh object exposing ``fit``/``predict``. ``project_factories`` ships ready
-factories for this repo's four models; the SVM factory wraps a ``StandardScaler`` in
-an sklearn ``Pipeline`` so scaling is fit **inside the fold, on the train block only**.
+factories for this repo's models (logistic regression, random forest, gradient boosting).
 
 Run with::
 
@@ -524,41 +523,29 @@ def module_factory(module: Any, params: dict, tmp_path: Path) -> Callable[[], An
 
 
 def project_factories(config: dict) -> dict[str, Callable[[], Any]]:
-    """Build ready walk-forward factories for the four project models.
+    """Build ready walk-forward factories for the project models.
 
     Each factory yields a fresh, seed-42 estimator configured from
-    ``model_params(config, algo)``. The SVM factory returns a ``Pipeline`` of
-    ``StandardScaler`` → ``SVC`` so the scaler is fit **inside each fold on the train
-    block only** — never on the full series (leakage rule).
+    ``model_params(config, algo)``.
 
     Args:
         config: Config dict from ``load_config()`` supplying per-algo hyperparameters.
 
     Returns:
-        Dict mapping ``{'baseline','rf','gbm','svm'}`` to zero-arg factories.
+        Dict mapping ``{'baseline','rf','gbm'}`` to zero-arg factories.
     """
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.linear_model import LogisticRegression
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.svm import SVC
     from xgboost import XGBClassifier
 
     baseline_p = model_params(config, "baseline") or {"max_iter": 1000}
     rf_p = model_params(config, "rf")
     gbm_p = model_params(config, "gbm")
-    svm_p = model_params(config, "svm")
-
-    def _make_svm() -> Any:
-        p = dict(svm_p)
-        p["random_state"] = 42
-        return make_pipeline(StandardScaler(), SVC(**p))
 
     return {
         "baseline": sklearn_factory(LogisticRegression, baseline_p),
         "rf": sklearn_factory(RandomForestClassifier, rf_p),
         "gbm": sklearn_factory(XGBClassifier, gbm_p),
-        "svm": _make_svm,
     }
 
 
@@ -595,7 +582,7 @@ def main() -> None:
     """CLI entry: run walk-forward for one algo on a feature set and print the report."""
     parser = argparse.ArgumentParser(description="Rolling walk-forward validation.")
     parser.add_argument("--algo", default="baseline",
-                        choices=("baseline", "rf", "gbm", "svm"))
+                        choices=("baseline", "rf", "gbm"))
     parser.add_argument("--featset", default="v1", choices=("v1", "v2", "v3"))
     parser.add_argument("--train-months", type=int, default=None)
     parser.add_argument("--test-months", type=int, default=None)

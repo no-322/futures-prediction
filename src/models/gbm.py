@@ -26,7 +26,7 @@ Hyperparameter rationale (ESL Chapter 10):
 - n_jobs=-1: Use all available cores for training.
 
 Scale invariance: GBM splits on rank order, not absolute feature values;
-no StandardScaler is needed (contrast with SVM, ESL 12.3.2).
+no StandardScaler is needed.
 """
 from pathlib import Path
 

@@ -89,35 +89,6 @@ Samples evaluated: 140,613
 | **Actual 0** | 69,411 | 83 |
 | **Actual 1** | 71,031 | 88 |
 
----
-
-## SVM (RBF kernel) (v2, flat-incl)
-
-Samples evaluated: 140,613
-
-### Scalar metrics
-
-| Metric | Value |
-|--------|-------|
-| Accuracy | 0.5157 |
-| Macro F1 | 0.5134 |
-| Weighted F1 | 0.5130 |
-| MCC | 0.0336 |
-
-### Per-class metrics
-
-| Class | Precision | Recall | F1 | Support |
-|-------|-----------|--------|----|---------|
-| 0 | 0.5086 | 0.5923 | 0.5473 | 69,494 |
-| 1 | 0.5253 | 0.4409 | 0.4794 | 71,119 |
-
-### Confusion matrix (rows = actual, cols = predicted)
-
-|  | Pred 0 | Pred 1 |
-|--|--|--|
-| **Actual 0** | 41,164 | 28,330 |
-| **Actual 1** | 39,766 | 31,353 |
-
 
 ---
 
@@ -207,33 +178,4 @@ Samples evaluated: 140,613
 |--|--|--|
 | **Actual 0** | 30,754 | 38,740 |
 | **Actual 1** | 26,858 | 44,261 |
-
----
-
-## SVM (RBF kernel) (no-flat, v2)
-
-Samples evaluated: 140,613
-
-### Scalar metrics
-
-| Metric | Value |
-|--------|-------|
-| Accuracy | 0.5326 |
-| Macro F1 | 0.5324 |
-| Weighted F1 | 0.5325 |
-| MCC | 0.0649 |
-
-### Per-class metrics
-
-| Class | Precision | Recall | F1 | Support |
-|-------|-----------|--------|----|---------|
-| 0 | 0.5275 | 0.5193 | 0.5234 | 69,494 |
-| 1 | 0.5373 | 0.5456 | 0.5414 | 71,119 |
-
-### Confusion matrix (rows = actual, cols = predicted)
-
-|  | Pred 0 | Pred 1 |
-|--|--|--|
-| **Actual 0** | 36,086 | 33,408 |
-| **Actual 1** | 32,319 | 38,800 |
 

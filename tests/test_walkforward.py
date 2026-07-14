@@ -243,12 +243,9 @@ def test_summarize_contains_headline_and_table(synthetic) -> None:
 
 def test_project_factories_build_fresh_seeded_models() -> None:
     cfg = {"models": {"baseline": {"max_iter": 500}, "rf": {"n_estimators": 10},
-                      "gbm": {"n_estimators": 10}, "svm": {"C": 1.0}}}
+                      "gbm": {"n_estimators": 10}}}
     facs = project_factories(cfg)
-    assert set(facs) == {"baseline", "rf", "gbm", "svm"}
-    # SVM factory must fit its scaler in-fold → a Pipeline, not a bare SVC.
-    from sklearn.pipeline import Pipeline
-    assert isinstance(facs["svm"](), Pipeline)
+    assert set(facs) == {"baseline", "rf", "gbm"}
     assert facs["baseline"]().random_state == 42
 
 

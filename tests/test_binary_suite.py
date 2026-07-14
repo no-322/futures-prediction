@@ -100,5 +100,5 @@ def test_feature_importance_rf_and_baseline_sorted() -> None:
     assert (imp_b["importance"] >= 0).all()       # abs(coef)
 
 
-def test_feature_importance_svm_returns_none() -> None:
-    assert bn._feature_importance("svm", object(), ["a", "b"]) is None
+def test_feature_importance_unknown_returns_none() -> None:
+    assert bn._feature_importance("unknown", object(), ["a", "b"]) is None
