@@ -131,7 +131,7 @@ src.walkforward
 | `src.features_v1_rel` | `build_features_v1_rel` | 1 |
 | `src.features_v2` | `_rsi`, `_rolling_vol`, `_macd`, `build_features_v2`, `load_or_build_features_v2` | 5 |
 | `src.features_v3` | `_transform_v3`, `build_features_v3`, `load_or_build_features_v3` | 3 |
-| `src.gen_module_docs` | `_module_name`, `build_inventory`, `build_import_graph`, `render_module_diagram`, `generate`, `check_modules_md`, `main` | 7 |
+| `src.gen_module_docs` | `_module_name`, `build_inventory`, `build_import_graph`, `render_module_diagram`, `generate`, `_documented`, `check_modules_md`, `main` | 8 |
 | `src.labels` | `build_labels`, `direction_labels`, `move_series`, `flat_mask`, `drop_flat` | 5 |
 | `src.load` | `load_raw`, `validate` | 2 |
 | `src.models.gbm` | `train`, `predict`, `save`, `load` | 4 |

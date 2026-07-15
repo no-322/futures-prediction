@@ -4,19 +4,21 @@ Deterministic parts of the docs are machine-generated from the source AST:
   * ``docs/notes/module_diagram.md`` — an ASCII import graph (who imports whom, within
     ``src``) plus a per-module function inventory. Fully regenerated on every run.
   * ``--check`` — verify that every public ``src`` function has an entry in
-    ``docs/MODULES.md`` (name present). The author-written pseudocode/logic block per
-    function cannot be machine-generated; this check enforces that MODULES.md at least
-    lists every function, so nothing is silently undocumented.
+    ``docs/MODULES.md`` with a ``### `func` `` anchor **and** an author-written pseudocode
+    block (a fenced ```` ``` ```` block within that function's section). The pseudocode
+    itself cannot be machine-generated; this check enforces its presence (CLAUDE.md rule
+    6), so nothing is silently undocumented.
 
 Run with::
 
     python -m src.gen_module_docs            # (re)write docs/notes/module_diagram.md
-    python -m src.gen_module_docs --check     # verify MODULES.md lists every function
+    python -m src.gen_module_docs --check     # verify MODULES.md documents every function
 """
 from __future__ import annotations
 
 import argparse
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -115,20 +117,53 @@ def generate(diagram_path: Path = _DIAGRAM) -> None:
     print(f"module diagram → {diagram_path}")
 
 
-def check_modules_md(modules_path: Path = _MODULES) -> list[str]:
-    """Return ``module.func`` names that have no entry (by name) in MODULES.md.
+def _documented(text: str) -> dict[tuple[str, str], bool]:
+    """Map ``(module, func) → has_pseudocode`` from MODULES.md structure.
 
-    Private helpers (leading underscore) are exempt from the requirement.
+    MODULES.md is organised as ``## src.module`` sections, each containing
+    ``### `func` `` entries. A function is documented iff its ``### `func` `` anchor
+    exists under the right module header **and** its section holds a fenced code
+    block (the pseudocode). Function names repeat across modules (``train`` in
+    logistic/rf/gbm), so the key is module-qualified.
+    """
+    out: dict[tuple[str, str], bool] = {}
+    module: str | None = None
+    func: str | None = None
+    fence = False
+
+    def flush() -> None:
+        if module is not None and func is not None:
+            out[(module, func)] = out.get((module, func), False) or fence
+
+    for line in text.splitlines():
+        h2 = re.match(r"^##\s+(\S+)", line)
+        h3 = re.match(r"^###\s+`([^`]+)`", line)
+        if h2:
+            flush(); func, fence, module = None, False, h2.group(1)
+        elif h3:
+            flush(); func, fence = h3.group(1), False
+        elif func is not None and line.lstrip().startswith("```"):
+            fence = True
+    flush()
+    return out
+
+
+def check_modules_md(modules_path: Path = _MODULES) -> list[str]:
+    """Return ``module.func`` names not fully documented in MODULES.md.
+
+    A public function is documented iff it has a ``### `func` `` entry under its
+    ``## src.module`` header **and** that entry contains a fenced pseudocode block
+    (CLAUDE.md rule 6). Private helpers (leading underscore) are exempt.
     """
     if not modules_path.exists():
         return ["<docs/MODULES.md missing>"]
-    text = modules_path.read_text()
+    documented = _documented(modules_path.read_text())
     missing: list[str] = []
     for mod, funcs in build_inventory(_SRC).items():
         for fn in funcs:
             if fn.startswith("_"):
                 continue
-            if f"`{fn}`" not in text and f"| {fn} " not in text:
+            if not documented.get((mod, fn), False):
                 missing.append(f"{mod}.{fn}")
     return missing
 

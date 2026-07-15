@@ -104,12 +104,14 @@ duplicate timestamps. Rows are already sorted; do not re-sort.
 4. **Split is time-ordered, not shuffled.** The first fraction of rows by timestamp is
    training; the remainder is test (`train_size` in `config.yaml`).
 5. **Every `src/` module has a matching `tests/test_*.py`.**
-6. **`docs/MODULES.md` documents everything with pseudocode.** Each function gets one
-   entry: type-hinted **signature**, a one-line **description**, and a **pseudocode block
-   of its logic**. This applies to *everything* MODULES.md covers — ETL / data-engineering
-   steps and the construction logic of **each feature created**. Signatures + the module
-   diagram/inventory are kept in sync by `gen_module_docs.py` (Stage 2); the pseudocode
-   block is author-written and its presence is enforced by the post-edit hook.
+6. **`docs/MODULES.md` documents everything with pseudocode.** Each public function gets
+   one entry: a `### \`func\`` anchor, a type-hinted **signature**, a one-line
+   **description**, and a **pseudocode block of its logic**. This applies to *everything*
+   MODULES.md covers — ETL / data-engineering steps and the construction logic of **each
+   feature created**. The module diagram/inventory is kept in sync by `gen_module_docs.py`;
+   the pseudocode block is author-written, and its presence (anchor + fenced block per
+   public function) is enforced by `test_modules_md_complete` in `tests/test_gen_module_docs.py`
+   (run `python -m src.gen_module_docs --check` to list any gaps).
 7. **Drop flat bars.** Rows where `Open == Close` are removed from the dataset **before
    modelling** (train and test). Labels are therefore strictly binary; flat bars do not
    exist downstream. No "flat-included" metric is produced.
