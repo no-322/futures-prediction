@@ -409,6 +409,50 @@ def walkforward_curated(cfg: dict) -> None:
                              name="wf_baseline_alwaysup")
 
 
+def _threshold_predict_fn(thr: float | None):
+    """(model, X) -> labels applying a stored decision threshold; None → default predict."""
+    if thr is None:
+        return None
+    return lambda model, Xte: (model.predict_proba(Xte)[:, 1] >= thr).astype(int)
+
+
+def walkforward_curated_tuned(cfg: dict) -> None:
+    """Walk-forward the **tuned (regularized)** models, mirroring `walkforward_curated`.
+
+    For each feature set with a saved ``tuned_params_{featset}.json`` (v1/v2/v3), each fold
+    fits the model with the validation-selected regularized hyperparameters and applies the
+    stored decision threshold. Persists per-fold predictions as ``wf_tuned_{featset}_{algo}``,
+    which `leaderboard_walkforward` / `walkforward_results` pick up as `tuned_{featset}_{algo}`
+    rows alongside the default-hyperparameter ones.
+    """
+    import src.walkforward as walkforward
+    from src.models import gbm, logistic, rf
+
+    modules = {"logistic": logistic, "rf": rf, "gbm": gbm}
+    tmp = _PROC / "_wf_tuned_tmp" / "model.joblib"
+
+    for featset in _WF_FEATSETS:
+        spec_path = _PROC / f"tuned_params_{featset}.json"
+        if not spec_path.exists():
+            print(f"  (skip {featset}: no {spec_path.name})")
+            continue
+        spec = json.loads(spec_path.read_text())
+        X, y, ts, rets = _wf_xy(cfg, featset)
+        for algo in _WF_ALGOS:
+            entry = spec["models"].get(algo)
+            if entry is None:
+                continue
+            params = dict(entry["params"])
+            thr = entry.get("threshold") if spec.get("tune_threshold") else None
+            factory = walkforward.module_factory(modules[algo], params, tmp)
+            print(f"  walk-forward tuned {algo} on {featset} (thr={thr})")
+            walkforward.walk_forward(
+                X, y, ts, factory, config=cfg, returns=rets,
+                predict_fn=_threshold_predict_fn(thr),
+                name=f"wf_tuned_{featset}_{algo}",
+            )
+
+
 def leaderboard_walkforward(cfg: dict, proc: Path = _PROC,
                             out: Path = _WF_LEADERBOARD_PATH) -> None:
     """Write ``docs/notes/leaderboard-walk-forward.md`` ranked by mean fold accuracy.
@@ -515,12 +559,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--sections", nargs="+",
-        choices=["a", "c", "d", "lb", "wf", "lbwf"],
+        choices=["a", "c", "d", "lb", "wf", "wftuned", "lbwf"],
         default=["a", "c", "d"],
         help="Which sections to run: a=production stats, c=no-flat 20-feat suite + HMM, "
              "d=49-feature binary suites, lb=leaderboard.md (single test set), "
-             "wf=walk-forward the curated core (logistic/rf/gbm × v1/v1rel/v2/v3 + "
-             "always-up baseline), lbwf=leaderboard-walk-forward.md from the wf_* sets. "
+             "wf=walk-forward the curated core (default hyperparameters), "
+             "wftuned=walk-forward the tuned (regularized) models from tuned_params_*.json, "
+             "lbwf=leaderboard-walk-forward.md + results.md from the wf_* sets. "
              "lb/lbwf read existing .npz (no retraining). Default: a c d.",
     )
     args = parser.parse_args()
@@ -540,6 +585,8 @@ def main() -> None:
         leaderboard(cfg)
     if "wf" in args.sections:
         walkforward_curated(cfg)
+    if "wftuned" in args.sections:
+        walkforward_curated_tuned(cfg)
     if "lbwf" in args.sections:
         leaderboard_walkforward(cfg)
         walkforward_results(cfg)

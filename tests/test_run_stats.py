@@ -9,11 +9,16 @@ from pathlib import Path
 import pytest
 
 from src.config import load_config
-import numpy as np
+import json
 
+import numpy as np
+import pandas as pd
+
+import src.run_stats as rs
 from src.run_stats import (
     _LEADERBOARD_PATH,
     _leaderboard_name,
+    _threshold_predict_fn,
     leaderboard,
     leaderboard_walkforward,
     rank_models,
@@ -61,6 +66,48 @@ def test_leaderboard_writes_file(cfg: dict) -> None:
     text = _LEADERBOARD_PATH.read_text()
     assert "| Model | Accuracy | Recall | MCC | AUM % |" in text
     assert "single test set" in text.lower()
+
+
+def test_threshold_predict_fn() -> None:
+    assert _threshold_predict_fn(None) is None
+    fn = _threshold_predict_fn(0.6)
+
+    class _M:
+        def predict_proba(self, X):
+            col = np.array([0.5, 0.7, 0.61])
+            return np.column_stack([1 - col, col])
+    assert list(fn(_M(), None)) == [0, 1, 1]      # proba >= 0.6
+
+
+def test_walkforward_curated_tuned_uses_tuned_params(tmp_path, monkeypatch) -> None:
+    # tuned spec for v1 only → v1rel/v2/v3 skipped (no spec file).
+    proc = tmp_path / "proc"; proc.mkdir()
+    (proc / "tuned_params_v1.json").write_text(json.dumps({
+        "featset": "v1", "tune_threshold": True,
+        "models": {
+            "logistic": {"params": {"C": 10.0}, "threshold": 0.52},
+            "rf": {"params": {"max_depth": 12}, "threshold": 0.49},
+            "gbm": {"params": {"max_depth": 3}, "threshold": 0.50},
+        },
+    }))
+    monkeypatch.setattr(rs, "_PROC", proc)
+    monkeypatch.setattr(rs, "_WF_FEATSETS", ("v1", "v2"))   # v2 has no spec → skipped
+    monkeypatch.setattr(rs, "_wf_xy", lambda cfg, fs: (
+        pd.DataFrame({"a": [0.0, 1.0]}), pd.Series([0, 1]),
+        pd.Series(pd.to_datetime(["2024-01-01", "2024-02-01"])), np.array([0.0, 0.0])))
+
+    calls = []
+    import src.walkforward as wf
+    monkeypatch.setattr(wf, "module_factory", lambda m, p, t: ("factory", p))
+    monkeypatch.setattr(wf, "walk_forward",
+                        lambda *a, **k: calls.append((k["name"], k["predict_fn"], a[3])))
+
+    rs.walkforward_curated_tuned({})
+    names = [c[0] for c in calls]
+    assert names == ["wf_tuned_v1_logistic", "wf_tuned_v1_rf", "wf_tuned_v1_gbm"]
+    assert all(c[1] is not None for c in calls)            # threshold predict_fn applied
+    assert all(c[2][1] == params for c, params in           # tuned params forwarded
+               zip(calls, [{"C": 10.0}, {"max_depth": 12}, {"max_depth": 3}]))
 
 
 def test_leaderboard_walkforward_ranks_and_folds_won(tmp_path) -> None:
