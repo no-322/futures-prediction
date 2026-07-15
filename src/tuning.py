@@ -176,9 +176,10 @@ def _load_splits(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load + feature-build once → (X_train, raw_train, X_test, raw_test).
 
-    All four are aligned to ``df.iloc[4:]`` and split 50/50 by time, matching the
-    binary-suite / production prediction ordering.
+    All four are aligned to ``df.iloc[4:]``, flat (Close==Open) rows dropped globally,
+    and split 50/50 by time — matching the binary-suite / production ordering.
     """
+    from src.labels import drop_flat
     from src.load import load_raw
 
     train_size = cfg["data"].get("train_size", 0.5)
@@ -186,6 +187,7 @@ def _load_splits(
     df = load_raw(data_path)
     features = feat_fn(df)
     raw_align = df.iloc[4:].reset_index(drop=True)
+    features, raw_align = drop_flat(features, raw_align)   # binary 0/1 modelling set
     X_train, X_test = split(features, train_size=train_size)
     raw_train, raw_test = split(raw_align, train_size=train_size)
     return X_train, raw_train, X_test, raw_test

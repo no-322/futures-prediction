@@ -418,13 +418,13 @@ def leaderboard_walkforward(cfg: dict, proc: Path = _PROC,
     and **folds won** = number of folds the model beats the always-up baseline. Ranked by
     mean accuracy; the folds-won column is the regime-stability signal.
     """
-    base_npz = proc / "wf_baseline_alwaysup_predictions.npz"
+    base_npz = proc / "walkforward_wf_baseline_alwaysup_predictions.npz"
     base_acc = (np.load(base_npz)["accuracies"] if base_npz.exists() else None)
 
     rows = []
-    for npz in sorted(proc.glob("wf_*_predictions.npz")):
+    for npz in sorted(proc.glob("walkforward_wf_*_predictions.npz")):
         stem = npz.name[: -len("_predictions.npz")]
-        if stem == "wf_baseline_alwaysup":
+        if stem == "walkforward_wf_baseline_alwaysup":
             continue
         d = np.load(npz)
         accs = d["accuracies"]
@@ -433,7 +433,7 @@ def leaderboard_walkforward(cfg: dict, proc: Path = _PROC,
         won = (int(np.sum(accs > base_acc)) if base_acc is not None
                and len(base_acc) == len(accs) else None)
         aum = _aum_pct(d["y_pred"], d["returns"]) if "returns" in d else float("nan")
-        name = stem[len("wf_"):]
+        name = stem[len("walkforward_wf_"):]
         rows.append((name, float(np.nanmean(accs)), float(np.nanstd(accs)),
                      float(recall), won, len(accs), aum))
 
@@ -467,7 +467,7 @@ def walkforward_results(cfg: dict, proc: Path = _PROC,
     confusion matrix, Δ vs the always-up baseline, and backtest AUM %. Flat is dropped
     globally, so all metrics are on decisive up/down bars.
     """
-    base_npz = proc / "wf_baseline_alwaysup_predictions.npz"
+    base_npz = proc / "walkforward_wf_baseline_alwaysup_predictions.npz"
     base_mean = (float(np.nanmean(np.load(base_npz)["accuracies"]))
                  if base_npz.exists() else None)
 
@@ -477,9 +477,9 @@ def walkforward_results(cfg: dict, proc: Path = _PROC,
         "mean ± std across folds; Δ is vs the always-up baseline; AUM % is the "
         "compounding backtest total return.\n",
     ]
-    for npz in sorted(proc.glob("wf_*_predictions.npz")):
+    for npz in sorted(proc.glob("walkforward_wf_*_predictions.npz")):
         stem = npz.name[: -len("_predictions.npz")]
-        if stem == "wf_baseline_alwaysup":
+        if stem == "walkforward_wf_baseline_alwaysup":
             continue
         d = np.load(npz)
         accs = d["accuracies"]
@@ -490,7 +490,7 @@ def walkforward_results(cfg: dict, proc: Path = _PROC,
         delta = (mean - base_mean) * 100 if base_mean is not None else float("nan")
         aum = _aum_pct(d["y_pred"], d["returns"]) if "returns" in d else float("nan")
         blocks.append(
-            f"\n---\n\n## {stem[len('wf_'):]}\n\n"
+            f"\n---\n\n## {stem[len('walkforward_wf_'):]}\n\n"
             f"- **Accuracy:** {mean * 100:.1f}% ± {float(np.nanstd(accs)) * 100:.1f}% "
             f"across {len(accs)} folds (range "
             f"{float(np.nanmin(accs)) * 100:.1f}–{float(np.nanmax(accs)) * 100:.1f}%)\n"

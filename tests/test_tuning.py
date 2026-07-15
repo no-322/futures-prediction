@@ -67,7 +67,8 @@ def test_full_train_test_masks(cfg: dict) -> None:
         cfg, build_features)
     assert len(X_tr) == len(y_tr) == len(move_tr) > 0
     assert len(keep_te) == len(X_te) == len(y_te) == len(move_te)
-    assert 0 < int(keep_te.sum()) < len(keep_te)  # some flats dropped, not all
+    assert int(keep_te.sum()) == len(keep_te)   # flat dropped globally → all kept
+    assert not np.any(move_te == 0)             # no flat (zero-move) bars remain
     assert set(np.unique(y_te)) <= {0, 1}
 
 

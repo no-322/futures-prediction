@@ -72,10 +72,11 @@ def test_leaderboard_walkforward_ranks_and_folds_won(tmp_path) -> None:
                  y_true=np.array(y_true), y_pred=np.array(y_pred),
                  accuracies=np.array(accs, dtype=float))
 
-    # baseline (always-up) folds + two models with 3 folds each
-    _save("wf_baseline_alwaysup", [1, 0, 1, 0], [1, 1, 1, 1], [0.50, 0.50, 0.50])
-    _save("wf_v1_logistic", [1, 0, 1, 0], [1, 0, 1, 0], [0.60, 0.55, 0.45])  # wins 2/3
-    _save("wf_v3_gbm",      [1, 0, 1, 0], [1, 0, 0, 0], [0.70, 0.40, 0.52])  # wins 2/3
+    # baseline (always-up) folds + two models with 3 folds each (walk_forward prefixes
+    # its saved files with "walkforward_"; the curated names then start "wf_").
+    _save("walkforward_wf_baseline_alwaysup", [1, 0, 1, 0], [1, 1, 1, 1], [0.50, 0.50, 0.50])
+    _save("walkforward_wf_v1_logistic", [1, 0, 1, 0], [1, 0, 1, 0], [0.60, 0.55, 0.45])  # 2/3
+    _save("walkforward_wf_v3_gbm",      [1, 0, 1, 0], [1, 0, 0, 0], [0.70, 0.40, 0.52])  # 2/3
 
     out = tmp_path / "lbwf.md"
     leaderboard_walkforward({}, proc=proc, out=out)
