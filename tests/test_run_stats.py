@@ -1,35 +1,31 @@
-"""Tests for the no-flat-test evaluation slice in src.run_stats.
+"""Tests for the single-test leaderboard in src.run_stats.
 
-These cover the analysis-time slice that drops flat (Open == Close) test bars
-from the metrics only — no retraining. They lean on existing prediction
-artifacts in data/processed/; tests skip cleanly when those are absent.
+Covers the analysis-time functions that read saved prediction sets (no retraining):
+display-name decoding, model ranking, and the leaderboard.md writer. Tests that need
+the real data file skip cleanly when it is absent.
 """
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-import src.statistics as statistics
 from src.config import load_config
+import json
+
+import numpy as np
+import pandas as pd
+
+import src.run_stats as rs
 from src.run_stats import (
     _LEADERBOARD_PATH,
-    _NFT_NOFLAT_REPORT_PATH,
-    _NFT_REPORT_PATH,
-    _NFT_V2_REPORT_PATH,
-    _TOP5_EVAL_PATH,
     _leaderboard_name,
-    _nft_stats,
-    _score_predset,
-    _top5_recipe,
+    _threshold_predict_fn,
     leaderboard,
+    leaderboard_walkforward,
     rank_models,
-    section_noflat_test,
-    walkforward_top5,
 )
-# Aliased so pytest does not collect this `test_`-prefixed helper as a test.
-from src.run_stats import test_flat_mask as build_test_flat_mask
 
 _PROC = Path("data/processed")
+_DATA = Path("data/raw/data.csv")
 
 
 @pytest.fixture(scope="module")
@@ -37,158 +33,148 @@ def cfg() -> dict:
     return load_config()
 
 
-@pytest.fixture(scope="module")
-def keep(cfg: dict) -> np.ndarray:
-    return build_test_flat_mask(cfg)
+def test_leaderboard_name_decoding() -> None:
+    reg = {"exp_noflat_logistic": "Logistic Regression (no-flat)"}
+    # registry hit
+    assert _leaderboard_name("exp_noflat_logistic", reg) == "Logistic Regression (no-flat)"
+    # tuned_{feat}_{algo}
+    assert _leaderboard_name("tuned_v3_gbm", {}) == "Gradient Boosting (XGBoost) (tuned, v3)"
+    # v1-rel variant
+    assert _leaderboard_name("exp_noflat_v1rel_logistic", {}) == "Logistic Regression (v1-rel)"
+    # unknown → stem passthrough
+    assert _leaderboard_name("something_else", {}) == "something_else"
 
 
-def test_mask_is_bool_and_drops_some(keep: np.ndarray) -> None:
-    assert keep.dtype == bool
-    assert keep.ndim == 1
-    # Flat bars exist in the TY data, so the mask must drop at least one row
-    # but never all of them.
-    assert 0 < int((~keep).sum()) < keep.size
-
-
-def test_mask_matches_move_nonzero(keep: np.ndarray) -> None:
-    # flat ⇔ move == 0; the saved binary-suite `move` is the ground truth.
-    npz = _PROC / "exp_noflat_rf_predictions.npz"
-    if not npz.exists():
-        pytest.skip(f"{npz} not present")
-    move = np.load(npz)["move"]
-    assert move.size == keep.size
-    assert np.array_equal(keep, move != 0)
-
-
-def test_nft_stats_matches_manual_slice(keep: np.ndarray) -> None:
-    npz = _PROC / "exp_noflat_rf_predictions.npz"
-    if not npz.exists():
-        pytest.skip(f"{npz} not present")
-    d = np.load(npz)
-    res = _nft_stats("exp_noflat_rf", "Random Forest (no-flat)", keep)
-    expected = statistics.compute(d["y_true"][keep], d["y_pred"][keep])
-    assert res is not None
-    assert res["n_samples"] == int(keep.sum())
-    assert res["accuracy"] == pytest.approx(expected["accuracy"])
-    assert res["mcc"] == pytest.approx(expected["mcc"])
-
-
-def test_nft_stats_skips_length_mismatch(keep: np.ndarray) -> None:
-    # 3-class / two-stage sets have a different length and must be skipped.
-    candidates = ["exp_three_class_v1", "exp_two_stage_v1", "exp_regime_v2"]
-    stem = next((c for c in candidates
-                 if (_PROC / f"{c}_predictions.npz").exists()
-                 and len(np.load(_PROC / f"{c}_predictions.npz")["y_pred"]) != keep.size),
-                None)
-    if stem is None:
-        pytest.skip("no length-mismatched prediction set available")
-    assert _nft_stats(stem, "mismatch", keep) is None
-
-
-def test_nft_stats_missing_returns_none(keep: np.ndarray) -> None:
-    assert _nft_stats("definitely_not_a_real_stem", "nope", keep) is None
-
-
-def test_section_writes_reports(cfg: dict) -> None:
-    if not (_PROC / "rf_predictions.npz").exists():
-        pytest.skip("production predictions not present")
-    section_noflat_test(cfg)
-    assert _NFT_REPORT_PATH.exists()
-    text = _NFT_REPORT_PATH.read_text()
-    assert "No-Flat Test Slice" in text
-    assert "flat dropped" in text
-    # The other two reports exist when their artifacts do.
-    if (_PROC / "exp_noflat_rf_predictions.npz").exists():
-        assert _NFT_NOFLAT_REPORT_PATH.exists()
-    if (_PROC / "exp_v2_rf_predictions.npz").exists():
-        assert _NFT_V2_REPORT_PATH.exists()
-
-
-def test_leaderboard_writes_sorted(cfg: dict) -> None:
-    if not (_PROC / "rf_predictions.npz").exists():
-        pytest.skip("production predictions not present")
-    leaderboard(cfg)
-    assert _LEADERBOARD_PATH.exists()
-    text = _LEADERBOARD_PATH.read_text()
-    assert "| Model | No-flat test acc | Accuracy | MCC |" in text
-    # Data rows: start with "|", skip the header and the |---| separator.
-    nf_accs = [
-        float(line.split("|")[2])
-        for line in text.splitlines()
-        if line.startswith("|") and "Model" not in line and "---" not in line
-    ]
-    assert len(nf_accs) > 1
-    assert nf_accs == sorted(nf_accs, reverse=True)  # ordered by no-flat acc
-
-
-def test_rank_models_sorted_with_stems(cfg: dict) -> None:
-    if not (_PROC / "rf_predictions.npz").exists():
-        pytest.skip("production predictions not present")
+def test_rank_models_returns_sorted(cfg: dict) -> None:
+    if not _DATA.exists():
+        pytest.skip("raw data file not present")
     rows = rank_models(cfg)
-    assert len(rows) > 1
-    for stem, name, nf_acc, acc, mcc in rows:
-        assert isinstance(stem, str) and (_PROC / f"{stem}_predictions.npz").exists()
-        assert isinstance(name, str)
-    # Sorted by (no-flat acc, full MCC) descending.
+    assert isinstance(rows, list)
+    for stem, name, acc, recall, mcc, aum in rows:
+        assert isinstance(stem, str) and isinstance(name, str)
+        assert 0.0 <= acc <= 1.0
+    # Sorted by (accuracy, mcc) descending.
     keys = [(r[2], r[4]) for r in rows]
     assert keys == sorted(keys, reverse=True)
 
 
-def test_top5_recipe_decode(cfg: dict) -> None:
-    # exp_noflat_baseline → v1 baseline, no threshold.
-    r = _top5_recipe("exp_noflat_baseline", cfg)
-    assert r["algo"] == "baseline" and r["featset"] == "v1" and r["threshold"] is None
-    # tuned_{feat}_{algo} → reads tuned_params JSON (if present).
-    if (_PROC / "tuned_params_v3.json").exists():
-        r3 = _top5_recipe("tuned_v3_gbm", cfg)
-        assert r3["algo"] == "gbm" and r3["featset"] == "v3"
-        assert r3["params"] and isinstance(r3["threshold"], float)
+def test_leaderboard_writes_file(cfg: dict) -> None:
+    if not _DATA.exists():
+        pytest.skip("raw data file not present")
+    leaderboard(cfg)
+    assert _LEADERBOARD_PATH.exists()
+    text = _LEADERBOARD_PATH.read_text()
+    assert "| Model | Accuracy | Recall | MCC | AUM % |" in text
+    assert "single test set" in text.lower()
 
 
-def test_leaderboard_name_decodes_ss_variants() -> None:
-    # Linear HMM variants decode off the base registry name; non-linear off tuned_.
-    reg = {"exp_noflat_baseline": "Logistic Regression (no-flat)"}
-    assert (_leaderboard_name("ss_hmmfeat_exp_noflat_baseline", reg)
-            == "Logistic Regression (no-flat) + HMM regime feature")
-    assert (_leaderboard_name("ss_hmmgate_exp_noflat_baseline", reg)
-            == "Logistic Regression (no-flat) + HMM gate (high-vol)")
-    assert (_leaderboard_name("ss_offeat_tuned_v3_gbm", {})
-            == "Gradient Boosting (XGBoost) (tuned, v3) + order-flow + regime feature")
-    assert (_leaderboard_name("ss_ofgate_tuned_v3_rf", {})
-            == "Random Forest (tuned, v3) + order-flow + HMM gate")
+def test_threshold_predict_fn() -> None:
+    assert _threshold_predict_fn(None) is None
+    fn = _threshold_predict_fn(0.6)
+
+    class _M:
+        def predict_proba(self, X):
+            col = np.array([0.5, 0.7, 0.61])
+            return np.column_stack([1 - col, col])
+    assert list(fn(_M(), None)) == [0, 1, 1]      # proba >= 0.6
 
 
-def test_score_predset_plain_vs_gated() -> None:
-    keep = np.array([True, True, False, True, True])      # row 2 is flat
-    yt = np.array([1, 0, 1, 1, 0])
-    yp = np.array([1, 1, 1, 0, 0])
+def test_walkforward_curated_tuned_uses_tuned_params(tmp_path, monkeypatch) -> None:
+    # tuned spec for v1 only → v1rel/v2/v3 skipped (no spec file).
+    proc = tmp_path / "proc"; proc.mkdir()
+    (proc / "tuned_params_v1.json").write_text(json.dumps({
+        "featset": "v1", "tune_threshold": True,
+        "models": {
+            "logistic": {"params": {"C": 10.0}, "threshold": 0.52},
+            "rf": {"params": {"max_depth": 12}, "threshold": 0.49},
+            "gbm": {"params": {"max_depth": 3}, "threshold": 0.50},
+        },
+    }))
+    monkeypatch.setattr(rs, "_PROC", proc)
+    monkeypatch.setattr(rs, "_WF_FEATSETS", ("v1", "v2"))   # v2 has no spec → skipped
+    monkeypatch.setattr(rs, "_wf_xy", lambda cfg, fs: (
+        pd.DataFrame({"a": [0.0, 1.0]}), pd.Series([0, 1]),
+        pd.Series(pd.to_datetime(["2024-01-01", "2024-02-01"])), np.array([0.0, 0.0])))
 
-    # Plain: no-flat acc over keep rows {0,1,3,4} = 2/4; coverage None.
-    nf, full, mcc, cov = _score_predset({"y_true": yt, "y_pred": yp}, keep)
-    assert nf == pytest.approx(0.5)
-    assert cov is None
+    calls = []
+    import src.walkforward as wf
+    monkeypatch.setattr(wf, "module_factory", lambda m, p, t: ("factory", p))
+    monkeypatch.setattr(wf, "walk_forward",
+                        lambda *a, **k: calls.append((k["name"], k["predict_fn"], a[3])))
 
-    # Gated: score only traded high-vol bars; coverage = traded non-flat / non-flat.
-    gate = np.array([True, False, True, True, False])     # high-vol rows
-    nf_g, full_g, mcc_g, cov_g = _score_predset(
-        {"y_true": yt, "y_pred": yp, "gate": gate}, keep)
-    # keep & gate = rows {0,3}: yt[1,1] vs yp[1,0] → 1/2.
-    assert nf_g == pytest.approx(0.5)
-    assert cov_g == pytest.approx(2 / 4)                  # 2 traded of 4 non-flat
+    rs.walkforward_curated_tuned({})
+    names = [c[0] for c in calls]
+    assert names == ["wf_tuned_v1_logistic", "wf_tuned_v1_rf", "wf_tuned_v1_gbm"]
+    assert all(c[1] is not None for c in calls)            # threshold predict_fn applied
+    assert all(c[2][1] == params for c, params in           # tuned params forwarded
+               zip(calls, [{"C": 10.0}, {"max_depth": 12}, {"max_depth": 3}]))
 
 
-def test_walkforward_top5_writes_markdown(cfg: dict) -> None:
-    # Top-2 are both v1 logistic → cheap to retrain across folds.
-    if not (_PROC / "rf_predictions.npz").exists():
-        pytest.skip("production predictions not present")
-    walkforward_top5(cfg, k=2)
-    assert _TOP5_EVAL_PATH.exists()
-    text = _TOP5_EVAL_PATH.read_text()
-    assert "Walk-Forward Evaluation" in text
-    assert "no-flat test slice" in text.lower()
-    assert text.count("\n## #") == 2                      # two model sections
-    assert text.count("± ") >= 2                          # mean ± std headline each
-    assert "| Fold |" in text                             # per-fold table
-    # Per-fold predictions persisted (Rule 7).
-    top_stem = rank_models(cfg)[0][0]
-    assert (_PROC / f"walkforward_top5_{top_stem}_predictions.npz").exists()
+def test_walkforward_curated_regime_orderflow_recipes(monkeypatch) -> None:
+    # Mock the heavy data build + walk_forward; assert the 3 combo recipes are dispatched
+    # with a per-fold regime fold_transform and returns forwarded.
+    monkeypatch.setattr(rs, "_combo_xy", lambda cfg, base, variant: (
+        pd.DataFrame({"a": [0.0, 1.0]}), np.zeros((2, 5)), pd.Series([0, 1]),
+        pd.Series(pd.to_datetime(["2024-01-01", "2024-02-01"])), np.array([0.1, -0.1])))
+
+    calls = []
+    import src.walkforward as wf
+    monkeypatch.setattr(wf, "module_factory", lambda m, p, t: ("factory", p))
+    monkeypatch.setattr(wf, "walk_forward",
+                        lambda *a, **k: calls.append(
+                            (k["name"], k["fold_transform"], k["returns"])))
+
+    rs.walkforward_curated_regime_orderflow({})
+    names = [c[0] for c in calls]
+    assert names == ["wf_ofhmm_v1_logistic", "wf_ofhmm_v3_rf", "wf_ofhmm_v3_gbm"]
+    assert all(c[1] is not None for c in calls)                       # regime fold_transform
+    assert all(np.array_equal(c[2], np.array([0.1, -0.1])) for c in calls)  # returns forwarded
+
+
+def test_hmm_fold_transform_feature_appends_causally(monkeypatch) -> None:
+    import src.models.regime_hmm as rh
+    rng = np.random.RandomState(0)
+    X_base = pd.DataFrame(rng.randn(50, 2), columns=["a", "b"])
+    X_reg = rng.randn(50, 5)                     # 5 = len(REGIME_COLS)
+    train_idx, test_idx = np.arange(40), np.arange(40, 50)
+
+    captured = {}
+    real_fit = rh.fit_regime
+    def spy(X):
+        captured["fit_on"] = np.asarray(X)
+        return real_fit(X)
+    monkeypatch.setattr(rh, "fit_regime", spy)
+
+    ft = rs._hmm_fold_transform(X_base, X_reg, vol15_idx=0, mode="feature")
+    X_tr, X_te, gate = ft(train_idx, test_idx)
+
+    assert gate is None
+    assert "regime_hi_prob" in X_tr.columns and "regime_hi_prob" in X_te.columns
+    assert len(X_tr) == 40 and len(X_te) == 10
+    # Leakage guard: the HMM must be fit on the train block ONLY.
+    np.testing.assert_array_equal(captured["fit_on"], X_reg[train_idx])
+
+
+def test_leaderboard_walkforward_ranks_and_folds_won(tmp_path) -> None:
+    proc = tmp_path / "proc"
+    proc.mkdir()
+
+    def _save(name, y_true, y_pred, accs):
+        np.savez(proc / f"{name}_predictions.npz",
+                 y_true=np.array(y_true), y_pred=np.array(y_pred),
+                 accuracies=np.array(accs, dtype=float))
+
+    # baseline (always-up) folds + two models with 3 folds each (walk_forward prefixes
+    # its saved files with "walkforward_"; the curated names then start "wf_").
+    _save("walkforward_wf_baseline_alwaysup", [1, 0, 1, 0], [1, 1, 1, 1], [0.50, 0.50, 0.50])
+    _save("walkforward_wf_v1_logistic", [1, 0, 1, 0], [1, 0, 1, 0], [0.60, 0.55, 0.45])  # 2/3
+    _save("walkforward_wf_v3_gbm",      [1, 0, 1, 0], [1, 0, 0, 0], [0.70, 0.40, 0.52])  # 2/3
+
+    out = tmp_path / "lbwf.md"
+    leaderboard_walkforward({}, proc=proc, out=out)
+    text = out.read_text()
+    # v3_gbm mean (0.54) > v1_logistic mean (0.5333) → ranked first
+    lines = [l for l in text.splitlines() if l.startswith("| ") and "Model" not in l
+             and "---" not in l]
+    assert lines[0].split("|")[1].strip() == "v3_gbm"
+    assert "2/3" in text                       # folds-won computed vs baseline

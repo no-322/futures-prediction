@@ -17,6 +17,10 @@
           {
             "type": "command",
             "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/run-test.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/gen-docs.sh"
           }
         ]
       }

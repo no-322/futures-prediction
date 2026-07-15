@@ -20,7 +20,7 @@ walk_forward:
   embargo: 0             # test rows skipped after the train block (adjacent-boundary guard)
 
 models:
-  baseline:
+  logistic:
     max_iter: 1000
 
   rf:
@@ -44,11 +44,3 @@ models:
     objective: binary:logistic
     eval_metric: logloss
     n_jobs: -1
-
-  svm:
-    kernel: rbf            # Gaussian kernel (ESL 12.3.1)
-    C: 1.0                 # margin/error trade-off (ESL 12.2.1)
-    gamma: scale           # bandwidth adapted to feature variance (ESL 12.3.2)
-    class_weight: balanced
-    probability: false
-    cache_size: 500

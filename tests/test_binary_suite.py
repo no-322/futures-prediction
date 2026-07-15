@@ -20,21 +20,20 @@ def _synthetic_raw(n: int = 12) -> pd.DataFrame:
     })
 
 
-def test_build_noflat_dataset_drops_only_training_flats(monkeypatch) -> None:
-    # 12 raw rows -> aligned raw is rows 4..11 (8 rows) -> 4 train / 4 test.
+def test_build_dataset_drops_flat_globally(monkeypatch) -> None:
+    # 12 raw rows -> aligned raw is rows 4..11 (8 rows). Flat rows are dropped from
+    # the whole modelling set (train AND test) before the 50/50 split.
     df = _synthetic_raw(12)
-    # Aligned rows are df.iloc[4:]; set Close so two TRAIN rows are flat and one
-    # TEST row is flat (must survive untouched).
     closes = df["Close"].to_numpy().copy()
-    # aligned index 0..7 == df index 4..11
-    closes[4] = 100.5   # train row 0: up   (not flat)
-    closes[5] = 100.0   # train row 1: flat -> dropped
-    closes[6] = 100.0   # train row 2: flat -> dropped
-    closes[7] = 99.0    # train row 3: down (not flat)
-    closes[8] = 100.0   # test  row 0: flat -> kept, label 0
-    closes[9] = 100.5   # test  row 1: up
-    closes[10] = 99.0   # test  row 2: down
-    closes[11] = 100.0  # test  row 3: flat -> kept, label 0
+    # aligned index 0..7 == df index 4..11 (Open is 100 everywhere)
+    closes[4] = 100.5   # aligned 0: up
+    closes[5] = 100.0   # aligned 1: flat -> dropped
+    closes[6] = 100.0   # aligned 2: flat -> dropped
+    closes[7] = 99.0    # aligned 3: down
+    closes[8] = 100.0   # aligned 4: flat -> dropped
+    closes[9] = 100.5   # aligned 5: up
+    closes[10] = 99.0   # aligned 6: down
+    closes[11] = 100.0  # aligned 7: flat -> dropped
     df["Close"] = closes
 
     features = pd.DataFrame(np.arange(8 * 2).reshape(8, 2),
@@ -46,41 +45,15 @@ def test_build_noflat_dataset_drops_only_training_flats(monkeypatch) -> None:
     cfg = {"data": {"path": "x", "train_size": 0.5}}
     X_train, X_test, y_train, y_test, move_test = bn._build_dataset(cfg)
 
-    # Test split untouched: 4 rows, including the two flat ones.
-    assert len(X_test) == 4
-    assert len(y_test) == 4
-    assert len(move_test) == 4
-    assert list(y_test) == [0, 1, 0, 0]          # flat -> down(0)
-
-    # Two flat training rows removed -> 2 remain (the up and the down).
-    assert len(X_train) == 2
-    assert len(y_train) == 2
+    # 4 non-flat rows survive [up, down, up, down] → 2 train / 2 test, strictly binary.
+    assert len(X_train) == 2 and len(X_test) == 2
     assert list(y_train) == [1, 0]
-
-
-def test_build_dataset_keep_flat_retains_all_training_rows(monkeypatch) -> None:
-    # Same setup, but drop_flat=False must keep every training row (incl. flats).
-    df = _synthetic_raw(12)
-    closes = df["Close"].to_numpy().copy()
-    closes[4] = 100.5   # up
-    closes[5] = 100.0   # flat (kept when drop_flat=False)
-    closes[6] = 100.0   # flat
-    closes[7] = 99.0    # down
-    df["Close"] = closes
-    features = pd.DataFrame(np.arange(8 * 2).reshape(8, 2),
-                            columns=["f0", "f1"], dtype=float)
-
-    monkeypatch.setattr(bn, "load_raw", lambda _p: df)
-    # Pass an explicit builder to exercise the build_features_fn path too.
-    cfg = {"data": {"path": "x", "train_size": 0.5}}
-    X_train, X_test, y_train, y_test, _ = bn._build_dataset(
-        cfg, build_features_fn=lambda _d: features, drop_flat=False
-    )
-
-    assert len(X_train) == 4          # nothing dropped
-    assert len(y_train) == 4
-    assert list(y_train) == [1, 0, 0, 0]   # flats labelled down(0), still present
-    assert len(X_test) == 4           # test untouched
+    assert list(y_test) == [1, 0]
+    assert len(move_test) == 2
+    assert 0 not in np.abs(move_test)          # no flat (zero-move) bars remain
+    # Feature rows follow the surviving aligned indices [0, 3] (train) and [5, 6] (test).
+    assert X_train["f0"].tolist() == [0.0, 6.0]
+    assert X_test["f0"].tolist() == [10.0, 12.0]
 
 
 def test_feature_importance_rf_and_baseline_sorted() -> None:
@@ -95,10 +68,10 @@ def test_feature_importance_rf_and_baseline_sorted() -> None:
     assert imp["importance"].is_monotonic_decreasing
 
     lr = LogisticRegression(max_iter=200).fit(X, y)
-    imp_b = bn._feature_importance("baseline", lr, list(X.columns))
+    imp_b = bn._feature_importance("logistic", lr, list(X.columns))
     assert len(imp_b) == 3
     assert (imp_b["importance"] >= 0).all()       # abs(coef)
 
 
-def test_feature_importance_svm_returns_none() -> None:
-    assert bn._feature_importance("svm", object(), ["a", "b"]) is None
+def test_feature_importance_unknown_returns_none() -> None:
+    assert bn._feature_importance("unknown", object(), ["a", "b"]) is None

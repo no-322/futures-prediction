@@ -32,7 +32,7 @@ _PROC = Path("data/processed")
 _DOCS = Path("docs/notes")
 _REPORT_PATH = _DOCS / "backtest_stats.md"
 
-_ALGOS = ("baseline", "rf", "gbm", "svm")
+_ALGOS = ("logistic", "rf", "gbm")
 
 
 def _build_registry() -> dict[str, str]:

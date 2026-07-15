@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from src.features import build_features
-from src.labels import build_labels, direction_labels, flat_mask, move_series
+from src.labels import build_labels, direction_labels, drop_flat, flat_mask, move_series
 from src.load import load_raw
 from src.split import split
 
@@ -80,9 +80,22 @@ def test_move_series_signed_move() -> None:
 
 
 def test_flat_mask_equiv_move_zero() -> None:
-    # flat ⇔ move == 0 — the no-flat-test slice relies on this equivalence.
+    # flat ⇔ move == 0.
     raw = pd.DataFrame({
         "Open":  [100.0, 100.0, 101.0, 99.0],
         "Close": [100.5, 100.0, 101.0, 99.5],
     })
     assert list(flat_mask(raw)) == list(move_series(raw).to_numpy() == 0)
+
+
+def test_drop_flat_removes_flat_rows_and_aligns() -> None:
+    raw = pd.DataFrame({
+        "Open":  [100.0, 100.0, 101.0, 99.0],
+        "Close": [100.5, 100.0, 101.0, 98.5],   # rows 1 & 2 are flat; 0 up, 3 down
+    })
+    feats = pd.DataFrame({"f": [10, 11, 12, 13]})
+    feats_nf, raw_nf = drop_flat(feats, raw)
+    assert len(feats_nf) == len(raw_nf) == 2                 # two flat rows dropped
+    assert feats_nf["f"].tolist() == [10, 13]                # kept rows 0 and 3
+    assert list(build_labels(raw_nf)) == [1, 0]              # strictly binary
+    assert list(feats_nf.index) == [0, 1]                    # index reset

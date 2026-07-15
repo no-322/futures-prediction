@@ -2,9 +2,7 @@
 
 Usage:
     python -m src.pipeline --algo rf
-    python -m src.pipeline --algo gbm
-    python -m src.pipeline --algo svm
-    python -m src.pipeline --algo baseline
+    python -m src.pipeline --algo logistic
     python -m src.pipeline --algo all
     python -m src.pipeline --algo all --force      # retrain even if joblib exists
     python -m src.pipeline --config my_config.yaml # use a custom config file
@@ -31,22 +29,20 @@ from src.labels import build_labels
 from src.load import load_raw
 from src.split import split
 
-_ALGO_CHOICES = ("baseline", "rf", "gbm", "svm")
+_ALGO_CHOICES = ("logistic", "rf", "gbm")
 
 METADATA_PATH = Path("data/processed/training_metadata.json")
 
 _DEFAULT_PATHS: dict[str, Path] = {
-    "baseline": Path("data/processed/baseline_model.joblib"),
+    "logistic": Path("data/processed/logistic_model.joblib"),
     "rf":       Path("data/processed/rf_model.joblib"),
     "gbm":      Path("data/processed/gbm_model.joblib"),
-    "svm":      Path("data/processed/svm_model.joblib"),
 }
 
 _DISPLAY_NAMES: dict[str, str] = {
-    "baseline": "Logistic Regression",
+    "logistic": "Logistic Regression",
     "rf":       "Random Forest",
     "gbm":      "Gradient Boosting (XGBoost)",
-    "svm":      "SVM (RBF kernel)",
 }
 
 
@@ -73,9 +69,11 @@ def _build_dataset(
     Returns:
         Tuple of (X_train, X_test, y_train, y_test) with reset indices.
     """
+    from src.labels import drop_flat
     df = load_raw(data_path)
     features = build_features(df)
     raw_align = df.iloc[4:].reset_index(drop=True)
+    features, raw_align = drop_flat(features, raw_align)   # binary 0/1 modelling set
     X_train, X_test = split(features, train_size=train_size)
     raw_train, raw_test = split(raw_align, train_size=train_size)
     y_train = build_labels(raw_train)
@@ -96,7 +94,7 @@ def _write_training_metadata(
     and writes back — other models' entries are preserved.
 
     Args:
-        algo: Model key ('baseline', 'rf', 'gbm', 'svm').
+        algo: Model key ('logistic', 'rf', 'gbm').
         result: PipelineResult returned by run().
         data_path: Path to the training CSV used.
         train_size: Fraction of data used for training.
@@ -135,7 +133,7 @@ def _load_or_train(
     """Return a fitted model and whether training actually occurred.
 
     Args:
-        algo: One of 'baseline', 'rf', 'gbm', 'svm'.
+        algo: One of 'logistic', 'rf', 'gbm'.
         X_train: Training feature matrix.
         y_train: Training labels.
         force_retrain: If True, retrain even when a saved model exists.
@@ -145,35 +143,28 @@ def _load_or_train(
     Returns:
         (model, was_trained) — model artifact and True if trained, False if loaded.
     """
-    from src.models import baseline, rf
+    from src.models import logistic, rf
     from src.models.gbm import load as gbm_load
     from src.models.gbm import train as gbm_train
-    from src.models.svm import load as svm_load
-    from src.models.svm import train as svm_train
 
     path = _DEFAULT_PATHS[algo]
 
     if path.exists() and not force_retrain:
         print(f"  [{algo}] Loading saved model from {path}")
-        if algo == "baseline":
-            return baseline.load(path), False
+        if algo == "logistic":
+            return logistic.load(path), False
         if algo == "rf":
             return rf.load(path), False
         if algo == "gbm":
             return gbm_load(path), False
-        if algo == "svm":
-            return svm_load(path), False
 
-    suffix = " (slow — O(n²))" if algo == "svm" else ""
-    print(f"  [{algo}] Training{suffix}...")
-    if algo == "baseline":
-        return baseline.train(X_train, y_train, params=params), True
+    print(f"  [{algo}] Training...")
+    if algo == "logistic":
+        return logistic.train(X_train, y_train, params=params), True
     if algo == "rf":
         return rf.train(X_train, y_train, params=params), True
     if algo == "gbm":
         return gbm_train(X_train, y_train, params=params), True
-    if algo == "svm":
-        return svm_train(X_train, y_train, params=params), True
 
     raise ValueError(f"Unknown algo: {algo!r}")
 
@@ -182,25 +173,22 @@ def _get_predictions(algo: str, model: Any, X_test: pd.DataFrame) -> np.ndarray:
     """Return predictions from a fitted model.
 
     Args:
-        algo: One of 'baseline', 'rf', 'gbm', 'svm'.
+        algo: One of 'logistic', 'rf', 'gbm'.
         model: Fitted model artifact returned by _load_or_train().
         X_test: Test feature matrix.
 
     Returns:
         Integer ndarray of predicted labels (0 or 1), shape (n_test,).
     """
-    from src.models import baseline, rf
+    from src.models import logistic, rf
     from src.models.gbm import predict as gbm_predict
-    from src.models.svm import predict as svm_predict
 
-    if algo == "baseline":
-        return baseline.predict(model, X_test)
+    if algo == "logistic":
+        return logistic.predict(model, X_test)
     if algo == "rf":
         return rf.predict(model, X_test)
     if algo == "gbm":
         return gbm_predict(model, X_test)
-    if algo == "svm":
-        return svm_predict(model, X_test)
     raise ValueError(f"Unknown algo: {algo!r}")
 
 
@@ -218,7 +206,7 @@ def run(
     predicts on the test set, and returns metrics.
 
     Args:
-        algo: One of 'baseline', 'rf', 'gbm', 'svm'.
+        algo: One of 'logistic', 'rf', 'gbm'.
         data_path: Path to raw CSV; ignored when _dataset is provided.
         force_retrain: Retrain even if a saved joblib exists.
         config: Parsed config dict from load_config(); used to extract
@@ -310,7 +298,7 @@ if __name__ == "__main__":
             _print_result(result)
             results.append(result)
 
-        from src.models.baseline import predict_always_up, predict_last_direction
+        from src.baselines import predict_always_up, predict_last_direction
 
         reports = [
             evaluate.report("Always Up (baseline)", y_true, predict_always_up(len(y_true))),

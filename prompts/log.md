@@ -771,3 +771,88 @@ what are the high volatility and low volatility period volatilities?
 ## 2026-07-02 23:21:22
 
 commit all changes and push
+
+---
+## 2026-07-10 22:43:41
+
+I want you to build me a quick lookup markdown file that says which model v1 v2 v3 orderflow and hmm uses what features and pseudocode for the logic of feature created
+
+---
+## 2026-07-10 22:48:15
+
+can you build a logistic regression with our v1 features but make everything relative to open. No absolute values used. Add it to v1 and tell me the accuracy on no-flat test set
+
+---
+## 2026-07-13 15:08:33
+
+I want to focus on cleanup of repo now. There are a lot of duplication and outdated nomenclatures or workflows. Let us start with changes to CLAUDE.md
+1. The folder structure is outdated. This needs to be updated
+2. remove specification of time range, symbols and data quality point number 3. Keep the no Nan, no zero-volume rows and features must handle thesegaps correctly
+3. Non-negotiable change point 6. MODULES.md has to also include pseudo code for everything it does. This includes ETL data engineering as well as logic for each feature created. Once the change has been made rerun so that MODULES.md is updated with all information
+4. We need to rethink how we are taking care of "Feature Specification". Initially it was a simple feature engineering with delayed values added as new columns but now we have various parallel feature engineering pipeline running. Let us brainstorm on whether this section is still relevant and how to scale properly
+5. In models remove SVM and since logistic regression is performing the best, let us remove logistic regression from baseline and make it a seperate file. Add Logistic regression to CLAUDE.md models as well
+6. Evaluation format changes - All calculations are to be the average result on walk-forward validation. Complile accuracy after dropping flat, recall after dropping flat, confusion matrix, improvement or decrease in perfromance compared to baselines and add backtest increase in AUM as %
+7. Automatically update the ASCII drawn module diagram and module inventory in module_diagram.md after any change
+8. Any new model performance has to be tracked in two leaderboards. leaderboard-walk-forward.md and leaderboard.md (performance based on test set). We need to brainstorm if leaderboard-walk-forward will be based on average of walk-forward evaluation or based on which model wins most windows. Both will rank based on the no flat test set while also showing flat included accuracy and backtest
+9. Label Specifications are also to be changed. Let us add clause in non-negotiable as drop rows where open == close. So feature specification will include only 2 labels 0 and 1
+10. All relevant files like modules.md, module_diagram.md, leaderboard-walk-forward.md, results.md, leaderboard.md are to be rerun to reflect the correct specifications
+
+---
+## 2026-07-14 14:41:15
+
+Commit all changes grouped into sensible commits. Then lets proceed with stage 2
+
+---
+## 2026-07-14 15:28:41
+
+continue with 2b
+
+---
+## 2026-07-14 22:01:03
+
+continue
+
+---
+## 2026-07-14 22:11:29
+
+continue all together
+
+---
+## 2026-07-15 03:27:06
+
+continue
+
+---
+## 2026-07-15 04:12:42
+
+continue
+
+---
+## 2026-07-15 04:24:16
+
+continue with 2g, add AUM% to both leaderboard
+
+---
+## 2026-07-15 09:40:37
+
+I see vw and v3 are done as well but you mentioned tuned v2, tuned v3 are not done. Does that mean regularization is pending?
+
+---
+## 2026-07-15 12:39:11
+
+remind me whats pending from our plan
+
+---
+## 2026-07-15 23:32:44
+
+Run HMM(the feature addition version), order flow based model as well now.
+
+---
+## 2026-07-15 23:40:05
+
+I would like to clarify which featureset to test. Check previous leaderboard and see which feature set performed best with HMM and orderflow. Add both together. I think we would need to run v1+HMM+ orderflow for logistic (with normalized volume as per previous implementation) and v3 + HMM + orderflow for rf and GBM
+
+---
+## 2026-07-16 00:55:53
+
+Commit all changes and create pr request

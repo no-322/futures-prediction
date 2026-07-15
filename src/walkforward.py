@@ -21,8 +21,7 @@ Design:
 
 The harness accepts **any sklearn-style model** through a factory callable returning
 a fresh object exposing ``fit``/``predict``. ``project_factories`` ships ready
-factories for this repo's four models; the SVM factory wraps a ``StandardScaler`` in
-an sklearn ``Pipeline`` so scaling is fit **inside the fold, on the train block only**.
+factories for this repo's models (logistic regression, random forest, gradient boosting).
 
 Run with::
 
@@ -214,14 +213,12 @@ def walk_forward(
     step_months: int | None = None,
     purge: int | None = None,
     embargo: int | None = None,
-    keep: np.ndarray | None = None,
-    include_flat: bool = False,
-    drop_flat_train: bool = False,
     predict_fn: Callable[[Any, pd.DataFrame], np.ndarray] | None = None,
     fold_transform: Callable[
         [np.ndarray, np.ndarray],
         tuple[pd.DataFrame, pd.DataFrame, np.ndarray | None],
     ] | None = None,
+    returns: np.ndarray | None = None,
     name: str = "wf",
     save: bool = True,
 ) -> WalkForwardResult:
@@ -235,11 +232,8 @@ def walk_forward(
     Window sizes resolve from explicit kwargs first, then ``config['walk_forward']``,
     then the skill defaults (3 months train / 1 month test, step = test width).
 
-    No-flat handling (this project's default): flat bars (``Close == Open``) are
-    ambiguous up/down targets. When a ``keep`` mask is supplied, per-fold accuracy is
-    computed on the **non-flat test rows by default** (``include_flat=False``) — the
-    no-flat test slice. With ``keep=None`` there is no flatness signal, so the full
-    test block is scored (back-compatible).
+    Flat bars (``Close == Open``) are dropped from the modelling set upstream, so every
+    test row is a decisive up/down bar and the whole test block is scored.
 
     Args:
         X: Feature matrix, shape (n, d). Row-aligned with ``y`` and ``timestamps``.
@@ -252,23 +246,16 @@ def walk_forward(
         config: Optional config dict (from ``load_config()``) supplying window sizes.
         train_months, test_months, step_months, purge, embargo: Optional explicit
             overrides; each takes precedence over ``config`` when not None.
-        keep: Optional boolean non-flat mask (True = ``Close != Open``), aligned to the
-            full X/y/timestamps. Enables the no-flat scoring / no-flat training options.
-        include_flat: If False (default) and ``keep`` is given, per-fold accuracy uses
-            only the non-flat test rows; True scores the full test block.
-        drop_flat_train: If True and ``keep`` is given, flat rows are dropped from each
-            fold's train block before fitting (default: train on the full block).
         predict_fn: Optional ``(model, X) -> labels`` override (e.g. to apply a decision
             threshold via ``predict_proba``); defaults to ``model.predict``.
         fold_transform: Optional per-fold hook ``(full_train_idx, test_idx) ->
-            (X_tr_full, X_te, test_gate)``. Called once per fold **before**
-            ``drop_flat_train`` subsetting, so anything fit inside it (e.g. a per-fold
-            HMM regime model) sees the train block only — the leakage rule. ``X_tr_full``
-            is row-aligned to ``full_train_idx`` (the pre-flat-drop train block) and
-            ``X_te`` to ``test_idx``; both may carry extra columns (e.g. an appended
-            regime posterior). ``test_gate`` is an optional boolean over ``test_idx``
-            AND-ed into the scoring mask (e.g. trade only high-vol bars); pass None for
-            no gate. When None, the fold uses ``X`` directly (back-compatible).
+            (X_tr, X_te, test_gate)``. Called once per fold so anything fit inside it
+            (e.g. a per-fold HMM regime model) sees the train block only — the leakage
+            rule. ``X_tr`` is row-aligned to ``full_train_idx`` and ``X_te`` to
+            ``test_idx``; both may carry extra columns (e.g. an appended regime
+            posterior). ``test_gate`` is an optional boolean over ``test_idx`` AND-ed
+            into the scoring mask (e.g. trade only high-vol bars); pass None for no gate.
+            When None, the fold uses ``X`` directly.
         name: Short tag used in the report and the persisted npz filename.
         save: If True, write predictions to
             ``data/processed/walkforward_{name}_predictions.npz``.
@@ -290,12 +277,6 @@ def walk_forward(
     X = X.reset_index(drop=True)
     y = pd.Series(y).reset_index(drop=True)
     ts = pd.to_datetime(pd.Series(timestamps).reset_index(drop=True))
-    if keep is not None:
-        keep = np.asarray(keep, dtype=bool)
-        if keep.shape[0] != len(X):
-            raise ValueError(
-                f"keep must align to X; got {keep.shape[0]} vs {len(X)}"
-            )
 
     folds = make_folds(ts, tr, te, st, purge=pu, embargo=em)
     if not folds:
@@ -308,30 +289,21 @@ def walk_forward(
     y_true_all: list[np.ndarray] = []
     y_pred_all: list[np.ndarray] = []
     fold_id_all: list[np.ndarray] = []
-    kept_all: list[np.ndarray] = []
     scored_all: list[np.ndarray] = []
+    returns_all: list[np.ndarray] = []
     accuracies: list[float] = []
 
     for i, fold in enumerate(folds):
         full_train_idx = fold.train_idx
         test_idx = fold.test_idx
 
-        # Per-fold transform (e.g. fit a fresh HMM on the train block, append a regime
-        # column, and/or produce a scoring gate). Runs before drop_flat_train subsetting.
+        # Optional per-fold transform (e.g. fit a fresh HMM on the train block, append a
+        # regime column, and/or produce a scoring gate).
         if fold_transform is not None:
-            X_tr_full, X_te, test_gate = fold_transform(full_train_idx, test_idx)
+            X_tr, X_te, test_gate = fold_transform(full_train_idx, test_idx)
         else:
-            X_tr_full, X_te, test_gate = (
-                X.iloc[full_train_idx], X.iloc[test_idx], None,
-            )
-
-        # drop_flat_train subsets the (full) train block before fitting.
-        if drop_flat_train and keep is not None:
-            sub = keep[full_train_idx]
-            X_tr = X_tr_full.iloc[sub]
-            y_tr = y.iloc[full_train_idx[sub]]
-        else:
-            X_tr, y_tr = X_tr_full, y.iloc[full_train_idx]
+            X_tr, X_te, test_gate = X.iloc[full_train_idx], X.iloc[test_idx], None
+        y_tr = y.iloc[full_train_idx]
 
         model = model_factory()                       # fresh per fold
         model.fit(X_tr, y_tr)
@@ -341,14 +313,8 @@ def walk_forward(
             y_hat = np.asarray(model.predict(X_te))
         y_te_arr = y.iloc[test_idx].to_numpy()
 
-        # Eligible test rows (non-flat by default); a fold_transform gate narrows further.
-        test_keep = (
-            keep[test_idx] if keep is not None
-            else np.ones(y_te_arr.shape, dtype=bool)
-        )
-        eligible_mask = (
-            np.ones(y_te_arr.shape, dtype=bool) if include_flat else test_keep
-        )
+        # Every test row is decisive (flat dropped upstream); an optional gate narrows.
+        eligible_mask = np.ones(y_te_arr.shape, dtype=bool)
         if test_gate is not None:
             score_mask = eligible_mask & np.asarray(test_gate, dtype=bool)
         else:
@@ -365,8 +331,9 @@ def walk_forward(
         y_true_all.append(y_te_arr)
         y_pred_all.append(y_hat)
         fold_id_all.append(np.full(y_te_arr.shape, i, dtype=int))
-        kept_all.append(test_keep)
         scored_all.append(score_mask)
+        if returns is not None:
+            returns_all.append(np.asarray(returns)[test_idx])
         per_fold.append(
             {
                 "fold": i,
@@ -387,17 +354,18 @@ def walk_forward(
     if save:
         _PROC.mkdir(parents=True, exist_ok=True)
         npz_path = str(_PROC / f"walkforward_{name}_predictions.npz")
-        np.savez(
-            npz_path,
+        payload = dict(
             y_true=np.concatenate(y_true_all),
             y_pred=np.concatenate(y_pred_all),
             fold_id=np.concatenate(fold_id_all),
-            kept=np.concatenate(kept_all),
             scored=np.concatenate(scored_all),
             accuracies=accs,
             test_starts=np.array([f["test_start"] for f in per_fold]),
             test_ends=np.array([f["test_end"] for f in per_fold]),
         )
+        if returns is not None:
+            payload["returns"] = np.concatenate(returns_all)
+        np.savez(npz_path, **payload)
 
     return WalkForwardResult(
         name=name,
@@ -509,7 +477,7 @@ def module_factory(module: Any, params: dict, tmp_path: Path) -> Callable[[], An
 
     Args:
         module: A project model module exposing ``train(X, y, params, save_path)`` and
-            ``predict(model, X)`` (``src.models.baseline`` / ``rf`` / ``gbm``).
+            ``predict(model, X)`` (``src.models.logistic`` / ``rf`` / ``gbm``).
         params: Hyperparameter overrides overlaid on the module's defaults.
         tmp_path: Scratch path the module's ``train`` writes its joblib to each fold
             (overwritten; required because the module persists on every fit).
@@ -524,41 +492,29 @@ def module_factory(module: Any, params: dict, tmp_path: Path) -> Callable[[], An
 
 
 def project_factories(config: dict) -> dict[str, Callable[[], Any]]:
-    """Build ready walk-forward factories for the four project models.
+    """Build ready walk-forward factories for the project models.
 
     Each factory yields a fresh, seed-42 estimator configured from
-    ``model_params(config, algo)``. The SVM factory returns a ``Pipeline`` of
-    ``StandardScaler`` → ``SVC`` so the scaler is fit **inside each fold on the train
-    block only** — never on the full series (leakage rule).
+    ``model_params(config, algo)``.
 
     Args:
         config: Config dict from ``load_config()`` supplying per-algo hyperparameters.
 
     Returns:
-        Dict mapping ``{'baseline','rf','gbm','svm'}`` to zero-arg factories.
+        Dict mapping ``{'logistic','rf','gbm'}`` to zero-arg factories.
     """
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.linear_model import LogisticRegression
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.svm import SVC
     from xgboost import XGBClassifier
 
-    baseline_p = model_params(config, "baseline") or {"max_iter": 1000}
+    logistic_p = model_params(config, "logistic") or {"max_iter": 1000}
     rf_p = model_params(config, "rf")
     gbm_p = model_params(config, "gbm")
-    svm_p = model_params(config, "svm")
-
-    def _make_svm() -> Any:
-        p = dict(svm_p)
-        p["random_state"] = 42
-        return make_pipeline(StandardScaler(), SVC(**p))
 
     return {
-        "baseline": sklearn_factory(LogisticRegression, baseline_p),
+        "logistic": sklearn_factory(LogisticRegression, logistic_p),
         "rf": sklearn_factory(RandomForestClassifier, rf_p),
         "gbm": sklearn_factory(XGBClassifier, gbm_p),
-        "svm": _make_svm,
     }
 
 
@@ -567,8 +523,8 @@ def project_factories(config: dict) -> dict[str, Callable[[], Any]]:
 # ---------------------------------------------------------------------------
 
 def _build_xy(featset: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
-    """Load raw data and build (X, y, timestamps) aligned to df.iloc[4:]."""
-    from src.labels import build_labels
+    """Load raw data and build (X, y, timestamps), flat rows dropped, aligned."""
+    from src.labels import build_labels, drop_flat
     from src.load import load_raw
 
     cfg = load_config()
@@ -586,6 +542,7 @@ def _build_xy(featset: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
         raise ValueError(f"Unknown featset: {featset!r}")
 
     raw_align = df.iloc[4:].reset_index(drop=True)
+    X, raw_align = drop_flat(X, raw_align)              # binary 0/1 modelling set
     y = build_labels(raw_align)
     timestamps = raw_align["Date and Time"].reset_index(drop=True)
     return X, y, timestamps
@@ -594,8 +551,8 @@ def _build_xy(featset: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
 def main() -> None:
     """CLI entry: run walk-forward for one algo on a feature set and print the report."""
     parser = argparse.ArgumentParser(description="Rolling walk-forward validation.")
-    parser.add_argument("--algo", default="baseline",
-                        choices=("baseline", "rf", "gbm", "svm"))
+    parser.add_argument("--algo", default="logistic",
+                        choices=("logistic", "rf", "gbm"))
     parser.add_argument("--featset", default="v1", choices=("v1", "v2", "v3"))
     parser.add_argument("--train-months", type=int, default=None)
     parser.add_argument("--test-months", type=int, default=None)

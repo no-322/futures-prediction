@@ -47,23 +47,45 @@ def move_series(raw_align: pd.DataFrame) -> pd.Series:
 def flat_mask(raw_align: pd.DataFrame) -> np.ndarray:
     """Boolean mask marking flat bars (Close == Open).
 
-    Used to drop ambiguous flat rows from the *training* split when focusing on
-    pure binary up/down classification. Computed after features are built, so
-    removing flagged rows never alters another row's feature vector (no
-    look-ahead). Never apply to the test split *for training* — the test set
-    stays whole. Applying it as an evaluation/reporting slice is fine: the
-    "no-flat test" stats (run_stats.section_noflat_test) drop flat bars from the
-    metrics only, after predictions were already made on the whole test set
-    blind to flatness — that is not a refit and not look-ahead.
+    Flat bars are an ambiguous up/down target and are dropped from the modelling
+    set (train and test) via ``drop_flat``. Computed *after* features are built,
+    so a flat bar still contributes to neighbouring bars' lags — only its own
+    (ambiguous) target row is removed, never altering another row's features.
 
     Args:
-        raw_align: Raw DataFrame aligned to the feature matrix (df.iloc[4:]),
-            or its train slice.
+        raw_align: Raw DataFrame aligned to the feature matrix (df.iloc[4:]).
 
     Returns:
         Boolean ndarray, True where Close == Open, same length as raw_align.
     """
     return (raw_align["Close"].values == raw_align["Open"].values)
+
+
+def drop_flat(
+    features: pd.DataFrame, raw_align: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Drop flat (Close == Open) rows from the aligned modelling set.
+
+    Removes rows whose *target* bar is flat from both the feature matrix and the
+    aligned raw frame (which carries the label/move/timestamp), before splitting.
+    Features are built on the full series first, so a dropped flat bar still fed
+    its neighbours' lags — no look-ahead, no feature change. Labels are therefore
+    strictly binary 0/1 downstream.
+
+    Args:
+        features: Feature matrix aligned to ``raw_align`` (both 0-based, same length).
+        raw_align: Raw DataFrame aligned to the feature matrix (df.iloc[4:]).
+
+    Returns:
+        (features, raw_align) with flat rows removed and indices reset 0-based.
+    """
+    keep = ~flat_mask(raw_align)
+    n_before = len(features)
+    features = features[keep].reset_index(drop=True)
+    raw_align = raw_align[keep].reset_index(drop=True)
+    print(f"drop_flat: removed {n_before - len(features):,} flat rows "
+          f"({n_before:,} → {len(features):,})")
+    return features, raw_align
 
 
 if __name__ == "__main__":

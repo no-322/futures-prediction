@@ -33,7 +33,7 @@ def model_params(config: dict, algo: str) -> dict:
 
     Args:
         config: Config dict returned by load_config().
-        algo: One of 'baseline', 'rf', 'gbm', 'svm'.
+        algo: One of 'baseline', 'rf', 'gbm'.
 
     Returns:
         Dict of hyperparameters for the algo; empty dict if algo is not found.

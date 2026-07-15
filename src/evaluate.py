@@ -188,11 +188,10 @@ if __name__ == "__main__":
     from src.features import build_features
     from src.labels import build_labels, move_series
     from src.load import load_raw
-    from src.models import baseline, rf
+    from src import baselines
+    from src.models import logistic, rf
     from src.models.gbm import train as gbm_train
     from src.models.gbm import predict as gbm_predict
-    from src.models.svm import train as svm_train
-    from src.models.svm import predict as svm_predict
     from src.split import split
 
     df = load_raw(Path("data/raw/data.csv"))
@@ -208,22 +207,19 @@ if __name__ == "__main__":
     keep = move_series(raw_test).to_numpy() != 0
 
     print("Training Logistic Regression...")
-    lr_model = baseline.train(X_train, y_train)
+    lr_model = logistic.train(X_train, y_train)
     print("Training Random Forest...")
     rf_model = rf.train(X_train, y_train)
     print("Training GBM...")
     gbm_model = gbm_train(X_train, y_train)
-    print("Training SVM (slow — O(n²))...")
-    svm_model = svm_train(X_train, y_train)
     print("Done. Writing results...")
 
     reports = [
-        report("Always Up (baseline)", y_true, baseline.predict_always_up(len(y_true)), keep),
-        report("Last Direction (baseline)", y_true, baseline.predict_last_direction(y_train, y_test), keep),
-        report("Logistic Regression", y_true, baseline.predict(lr_model, X_test), keep),
+        report("Always Up (baseline)", y_true, baselines.predict_always_up(len(y_true)), keep),
+        report("Last Direction (baseline)", y_true, baselines.predict_last_direction(y_train, y_test), keep),
+        report("Logistic Regression", y_true, logistic.predict(lr_model, X_test), keep),
         report("Random Forest", y_true, rf.predict(rf_model, X_test), keep),
         report("Gradient Boosting (XGBoost)", y_true, gbm_predict(gbm_model, X_test), keep),
-        report("SVM (RBF kernel)", y_true, svm_predict(svm_model, X_test), keep),
     ]
 
     intro = (
