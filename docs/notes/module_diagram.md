@@ -140,7 +140,7 @@ src.walkforward
 | `src.models.regime_hmm` | `build_rf`, `fit_regime`, `assign_regime`, `filter_regime_posterior`, `filter_regime`, `canonical_regime_labels` | 6 |
 | `src.models.rf` | `train`, `predict`, `save`, `load` | 4 |
 | `src.pipeline` | `_build_dataset`, `_write_training_metadata`, `_load_or_train`, `_get_predictions`, `run`, `_print_result` | 6 |
-| `src.run_stats` | `section_a`, `section_c`, `section_d`, `_leaderboard_name`, `_aum_pct`, `_test_reference`, `rank_models`, `leaderboard`, `_featset_builder`, `_wf_xy`, `walkforward_curated`, `leaderboard_walkforward`, `walkforward_results`, `main` | 14 |
+| `src.run_stats` | `section_a`, `section_c`, `section_d`, `_leaderboard_name`, `_aum_pct`, `_test_reference`, `rank_models`, `leaderboard`, `_featset_builder`, `_wf_xy`, `walkforward_curated`, `_threshold_predict_fn`, `walkforward_curated_tuned`, `leaderboard_walkforward`, `walkforward_results`, `main` | 16 |
 | `src.split` | `split` | 1 |
 | `src.statistics` | `compute`, `format_markdown`, `write_results`, `to_dict`, `_positions_from_signals`, `max_drawdown`, `annualized_sharpe`, `_periods_per_year`, `backtest`, `plot_equity_curve`, `format_backtest_markdown`, `write_backtest_results` | 12 |
 | `src.tuning` | `_feature_fn`, `_fit`, `_predict`, `_scores`, `_default_threshold`, `predict_with_threshold`, `_load_splits`, `build_selection_split`, `_full_train_test`, `_move_weight`, `grid_search`, `tune_threshold`, `select_features`, `run_tuning`, `_write_report`, `main` | 16 |

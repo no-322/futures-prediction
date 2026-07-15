@@ -4,6 +4,150 @@ Rolling walk-forward (3-month train / 1-month test). Each model reports the mean
 
 ---
 
+## tuned_v1_gbm
+
+- **Accuracy:** 50.5% ± 0.9% across 34 folds (range 48.2–52.5%)
+- **Recall (up):** 0.6291
+- **Δ vs always-up baseline:** -0.1 pp
+- **Backtest AUM %:** +50.2%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 48,726 | 80,374 |
+| **Actual 1** | 49,101 | 83,295 |
+
+---
+
+## tuned_v1_logistic
+
+- **Accuracy:** 53.6% ± 2.2% across 34 folds (range 51.0–60.1%)
+- **Recall (up):** 0.7401
+- **Δ vs always-up baseline:** +3.0 pp
+- **Backtest AUM %:** +2464.6%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 41,640 | 87,460 |
+| **Actual 1** | 34,409 | 97,987 |
+
+---
+
+## tuned_v1_rf
+
+- **Accuracy:** 50.4% ± 0.8% across 34 folds (range 48.6–52.0%)
+- **Recall (up):** 0.5743
+- **Δ vs always-up baseline:** -0.1 pp
+- **Backtest AUM %:** +65.4%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 55,982 | 73,118 |
+| **Actual 1** | 56,355 | 76,041 |
+
+---
+
+## tuned_v2_gbm
+
+- **Accuracy:** 52.0% ± 1.2% across 34 folds (range 50.1–55.1%)
+- **Recall (up):** 0.6372
+- **Δ vs always-up baseline:** +1.4 pp
+- **Backtest AUM %:** +418.2%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 51,233 | 77,867 |
+| **Actual 1** | 48,032 | 84,364 |
+
+---
+
+## tuned_v2_logistic
+
+- **Accuracy:** 53.0% ± 1.7% across 34 folds (range 50.4–57.1%)
+- **Recall (up):** 0.6074
+- **Δ vs always-up baseline:** +2.4 pp
+- **Backtest AUM %:** +1295.2%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 57,631 | 71,469 |
+| **Actual 1** | 51,975 | 80,421 |
+
+---
+
+## tuned_v2_rf
+
+- **Accuracy:** 51.8% ± 0.9% across 34 folds (range 50.3–54.2%)
+- **Recall (up):** 0.5826
+- **Δ vs always-up baseline:** +1.2 pp
+- **Backtest AUM %:** +438.1%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 58,250 | 70,850 |
+| **Actual 1** | 55,262 | 77,134 |
+
+---
+
+## tuned_v3_gbm
+
+- **Accuracy:** 53.3% ± 1.8% across 34 folds (range 50.6–58.0%)
+- **Recall (up):** 0.5927
+- **Δ vs always-up baseline:** +2.7 pp
+- **Backtest AUM %:** +1685.2%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 60,391 | 68,709 |
+| **Actual 1** | 53,921 | 78,475 |
+
+---
+
+## tuned_v3_logistic
+
+- **Accuracy:** 51.7% ± 0.9% across 34 folds (range 49.6–53.6%)
+- **Recall (up):** 0.6083
+- **Δ vs always-up baseline:** +1.2 pp
+- **Backtest AUM %:** +413.3%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 54,701 | 74,399 |
+| **Actual 1** | 51,857 | 80,539 |
+
+---
+
+## tuned_v3_rf
+
+- **Accuracy:** 53.2% ± 1.7% across 34 folds (range 50.7–57.3%)
+- **Recall (up):** 0.5894
+- **Δ vs always-up baseline:** +2.6 pp
+- **Backtest AUM %:** +1551.0%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 60,570 | 68,530 |
+| **Actual 1** | 54,358 | 78,038 |
+
+---
+
 ## v1_gbm
 
 - **Accuracy:** 50.5% ± 0.9% across 34 folds (range 47.8–52.4%)
