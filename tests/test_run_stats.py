@@ -110,6 +110,51 @@ def test_walkforward_curated_tuned_uses_tuned_params(tmp_path, monkeypatch) -> N
                zip(calls, [{"C": 10.0}, {"max_depth": 12}, {"max_depth": 3}]))
 
 
+def test_walkforward_curated_regime_orderflow_recipes(monkeypatch) -> None:
+    # Mock the heavy data build + walk_forward; assert the 3 combo recipes are dispatched
+    # with a per-fold regime fold_transform and returns forwarded.
+    monkeypatch.setattr(rs, "_combo_xy", lambda cfg, base, variant: (
+        pd.DataFrame({"a": [0.0, 1.0]}), np.zeros((2, 5)), pd.Series([0, 1]),
+        pd.Series(pd.to_datetime(["2024-01-01", "2024-02-01"])), np.array([0.1, -0.1])))
+
+    calls = []
+    import src.walkforward as wf
+    monkeypatch.setattr(wf, "module_factory", lambda m, p, t: ("factory", p))
+    monkeypatch.setattr(wf, "walk_forward",
+                        lambda *a, **k: calls.append(
+                            (k["name"], k["fold_transform"], k["returns"])))
+
+    rs.walkforward_curated_regime_orderflow({})
+    names = [c[0] for c in calls]
+    assert names == ["wf_ofhmm_v1_logistic", "wf_ofhmm_v3_rf", "wf_ofhmm_v3_gbm"]
+    assert all(c[1] is not None for c in calls)                       # regime fold_transform
+    assert all(np.array_equal(c[2], np.array([0.1, -0.1])) for c in calls)  # returns forwarded
+
+
+def test_hmm_fold_transform_feature_appends_causally(monkeypatch) -> None:
+    import src.models.regime_hmm as rh
+    rng = np.random.RandomState(0)
+    X_base = pd.DataFrame(rng.randn(50, 2), columns=["a", "b"])
+    X_reg = rng.randn(50, 5)                     # 5 = len(REGIME_COLS)
+    train_idx, test_idx = np.arange(40), np.arange(40, 50)
+
+    captured = {}
+    real_fit = rh.fit_regime
+    def spy(X):
+        captured["fit_on"] = np.asarray(X)
+        return real_fit(X)
+    monkeypatch.setattr(rh, "fit_regime", spy)
+
+    ft = rs._hmm_fold_transform(X_base, X_reg, vol15_idx=0, mode="feature")
+    X_tr, X_te, gate = ft(train_idx, test_idx)
+
+    assert gate is None
+    assert "regime_hi_prob" in X_tr.columns and "regime_hi_prob" in X_te.columns
+    assert len(X_tr) == 40 and len(X_te) == 10
+    # Leakage guard: the HMM must be fit on the train block ONLY.
+    np.testing.assert_array_equal(captured["fit_on"], X_reg[train_idx])
+
+
 def test_leaderboard_walkforward_ranks_and_folds_won(tmp_path) -> None:
     proc = tmp_path / "proc"
     proc.mkdir()

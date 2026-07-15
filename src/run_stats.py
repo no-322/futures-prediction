@@ -453,6 +453,118 @@ def walkforward_curated_tuned(cfg: dict) -> None:
             )
 
 
+def _hmm_fold_transform(X_base: "pd.DataFrame", X_regime_full: np.ndarray,
+                        vol15_idx: int, mode: str = "feature"):
+    """Build a per-fold ``walk_forward`` transform that fits a fresh HMM on the train
+    block and assigns the causal (filtered) regime.
+
+    The HMM + scaler are fit on the fold's train regime descriptors only; the canonical
+    high-vol state is identified from the TRAIN filtered states; then the filtered
+    posterior is computed causally over ``concat(train, test)`` (time-ordered), so no
+    row peeks at the future.
+
+    mode == "feature": append ``regime_hi_prob`` = P(high-vol | data<=t) to X.
+    mode == "gate":    return a test gate selecting high-vol bars (filtered argmax == hi).
+    """
+    from src.models.regime_hmm import (
+        canonical_regime_labels,
+        filter_regime,
+        filter_regime_posterior,
+        fit_regime,
+    )
+
+    def _transform(full_train_idx: np.ndarray, test_idx: np.ndarray):
+        Xtr_reg = X_regime_full[full_train_idx]
+        hmm, scaler = fit_regime(Xtr_reg)                       # fit on train block only
+        train_states = filter_regime(hmm, scaler, Xtr_reg)      # causal train states
+        remap = canonical_regime_labels(train_states, Xtr_reg, vol15_idx)
+        hi_raw = next(raw for raw, canon in remap.items() if canon == 1)
+
+        order = np.concatenate([full_train_idx, test_idx])      # time-ordered
+        post = filter_regime_posterior(hmm, scaler, X_regime_full[order])
+        hi_prob = post[:, hi_raw]
+        n_tr = len(full_train_idx)
+        hi_tr, hi_te = hi_prob[:n_tr], hi_prob[n_tr:]
+
+        if mode == "feature":
+            X_tr = X_base.iloc[full_train_idx].copy()
+            X_tr["regime_hi_prob"] = hi_tr
+            X_te = X_base.iloc[test_idx].copy()
+            X_te["regime_hi_prob"] = hi_te
+            return X_tr, X_te, None
+        # gate: trade only high-vol bars (filtered argmax == high-vol state).
+        gate = hi_te >= 0.5
+        return X_base.iloc[full_train_idx], X_base.iloc[test_idx], gate
+
+    return _transform
+
+
+def _combo_xy(cfg: dict, base_featset: str, of_variant: str):
+    """Flat-free ``(X, X_regime, y, timestamps, returns)`` for a base+order-flow combo.
+
+    ``X`` = the base feature set concatenated with the 20 order-flow columns (``of_variant``
+    ``"raw"``/``"linear"``). ``X_regime`` = v2's ``REGIME_COLS`` descriptor array, sourced
+    independently so a v1 base still carries the HMM regime feature. All matrices are built
+    on ``df.iloc[4:]`` and flat-dropped with one shared mask so rows stay aligned.
+    """
+    from src.features_orderflow import load_or_build_features_orderflow
+    from src.labels import build_labels, flat_mask
+    from src.models.regime_hmm import REGIME_COLS
+
+    df = load_raw(Path(cfg["data"]["path"]))
+    X_base = _featset_builder(base_featset)(df).reset_index(drop=True)
+    X_of = load_or_build_features_orderflow(df, of_variant).reset_index(drop=True)
+    X_reg = load_or_build_features_v2(df)[REGIME_COLS].reset_index(drop=True)
+    raw_align = df.iloc[4:].reset_index(drop=True)
+
+    X = pd.concat([X_base, X_of], axis=1)
+    keep = ~flat_mask(raw_align)
+    X = X[keep].reset_index(drop=True)
+    X_reg = X_reg[keep].reset_index(drop=True).to_numpy()
+    raw_align = raw_align[keep].reset_index(drop=True)
+    y = build_labels(raw_align)
+    ts = raw_align["Date and Time"].reset_index(drop=True)
+    returns = ((raw_align["Close"] - raw_align["Open"]) / raw_align["Open"]).to_numpy()
+    return X, X_reg, y, ts, returns
+
+
+# base + order-flow + HMM-regime-feature combos: best base set per algo (retired leaderboard).
+_COMBO_RECIPES = [
+    ("v1", "linear", "logistic"),   # logistic: v1 + scale-stable order-flow
+    ("v3", "raw",    "rf"),         # trees: v3 + raw order-flow
+    ("v3", "raw",    "gbm"),
+]
+
+
+def walkforward_curated_regime_orderflow(cfg: dict) -> None:
+    """Walk-forward the base + order-flow + HMM-regime-feature combos.
+
+    Three recipes (best base set per algo from the retired single-split leaderboard):
+    logistic on v1 + order-flow[linear], rf/gbm on v3 + order-flow[raw], each with a
+    per-fold causal ``regime_hi_prob`` appended (HMM fit on the fold's train block only —
+    no look-ahead). Persists ``wf_ofhmm_{base}_{algo}`` sets that ``leaderboard_walkforward``
+    / ``walkforward_results`` pick up as ``ofhmm_{base}_{algo}`` rows.
+    """
+    import src.walkforward as walkforward
+    from src.models import gbm, logistic, rf
+    from src.models.regime_hmm import REGIME_COLS
+
+    modules = {"logistic": logistic, "rf": rf, "gbm": gbm}
+    vol15_idx = REGIME_COLS.index("lag1_vol15")
+    tmp = _PROC / "_wf_combo_tmp" / "model.joblib"
+
+    for base, variant, algo in _COMBO_RECIPES:
+        X, X_reg, y, ts, rets = _combo_xy(cfg, base, variant)
+        ft = _hmm_fold_transform(X, X_reg, vol15_idx, mode="feature")
+        factory = walkforward.module_factory(modules[algo], model_params(cfg, algo), tmp)
+        print(f"  walk-forward {algo} on {base}+orderflow[{variant}]+regime "
+              f"({X.shape[1]} feats)")
+        walkforward.walk_forward(
+            X, y, ts, factory, config=cfg, returns=rets, fold_transform=ft,
+            name=f"wf_ofhmm_{base}_{algo}",
+        )
+
+
 def leaderboard_walkforward(cfg: dict, proc: Path = _PROC,
                             out: Path = _WF_LEADERBOARD_PATH) -> None:
     """Write ``docs/notes/leaderboard-walk-forward.md`` ranked by mean fold accuracy.
@@ -559,12 +671,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--sections", nargs="+",
-        choices=["a", "c", "d", "lb", "wf", "wftuned", "lbwf"],
+        choices=["a", "c", "d", "lb", "wf", "wftuned", "wfcombo", "lbwf"],
         default=["a", "c", "d"],
         help="Which sections to run: a=production stats, c=no-flat 20-feat suite + HMM, "
              "d=49-feature binary suites, lb=leaderboard.md (single test set), "
              "wf=walk-forward the curated core (default hyperparameters), "
              "wftuned=walk-forward the tuned (regularized) models from tuned_params_*.json, "
+             "wfcombo=walk-forward the base+order-flow+HMM-regime-feature combos, "
              "lbwf=leaderboard-walk-forward.md + results.md from the wf_* sets. "
              "lb/lbwf read existing .npz (no retraining). Default: a c d.",
     )
@@ -587,6 +700,8 @@ def main() -> None:
         walkforward_curated(cfg)
     if "wftuned" in args.sections:
         walkforward_curated_tuned(cfg)
+    if "wfcombo" in args.sections:
+        walkforward_curated_regime_orderflow(cfg)
     if "lbwf" in args.sections:
         leaderboard_walkforward(cfg)
         walkforward_results(cfg)

@@ -4,6 +4,54 @@ Rolling walk-forward (3-month train / 1-month test). Each model reports the mean
 
 ---
 
+## ofhmm_v1_logistic
+
+- **Accuracy:** 52.1% ± 1.5% across 34 folds (range 49.6–55.7%)
+- **Recall (up):** 0.6657
+- **Δ vs always-up baseline:** +1.6 pp
+- **Backtest AUM %:** +593.5%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 47,946 | 81,154 |
+| **Actual 1** | 44,258 | 88,138 |
+
+---
+
+## ofhmm_v3_gbm
+
+- **Accuracy:** 53.2% ± 1.8% across 34 folds (range 50.8–58.3%)
+- **Recall (up):** 0.5668
+- **Δ vs always-up baseline:** +2.6 pp
+- **Backtest AUM %:** +1648.2%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 63,596 | 65,504 |
+| **Actual 1** | 57,358 | 75,038 |
+
+---
+
+## ofhmm_v3_rf
+
+- **Accuracy:** 52.9% ± 1.7% across 34 folds (range 50.5–57.1%)
+- **Recall (up):** 0.5611
+- **Δ vs always-up baseline:** +2.3 pp
+- **Backtest AUM %:** +1273.5%
+
+Confusion matrix (rows=actual, cols=predicted):
+
+| | Pred 0 | Pred 1 |
+|---|---|---|
+| **Actual 0** | 63,679 | 65,421 |
+| **Actual 1** | 58,110 | 74,286 |
+
+---
+
 ## tuned_v1_gbm
 
 - **Accuracy:** 50.5% ± 0.9% across 34 folds (range 48.2–52.5%)

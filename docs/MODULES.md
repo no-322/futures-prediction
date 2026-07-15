@@ -1062,6 +1062,20 @@ for featset in _WF_FEATSETS:
                      predict_fn=_threshold_predict_fn(thr), name=f"wf_tuned_{featset}_{algo}")
 ```
 
+### `walkforward_curated_regime_orderflow`
+`(cfg) -> None`
+
+Walk-forward the base + order-flow + HMM-regime-feature combos (logistic on v1+order-flow[linear], rf/gbm on v3+order-flow[raw]), each with a per-fold causal `regime_hi_prob` appended. Persists `wf_ofhmm_{base}_{algo}` sets.
+
+```
+for (base, variant, algo) in _COMBO_RECIPES:
+    X, X_reg, y, ts, rets = _combo_xy(cfg, base, variant)   # base+orderflow cols, flat-free
+    ft = _hmm_fold_transform(X, X_reg, vol15_idx, "feature") # per-fold train-only HMM → regime_hi_prob
+    factory = module_factory(module, model_params(cfg, algo), tmp)
+    walk_forward(X, y, ts, factory, config=cfg, returns=rets,
+                 fold_transform=ft, name=f"wf_ofhmm_{base}_{algo}")
+```
+
 ### `leaderboard_walkforward`
 `(cfg, proc=_PROC, out=_WF_LEADERBOARD_PATH) -> None`
 
