@@ -831,3 +831,28 @@ continue
 ## 2026-07-15 04:24:16
 
 continue with 2g, add AUM% to both leaderboard
+
+---
+## 2026-07-15 09:40:37
+
+I see vw and v3 are done as well but you mentioned tuned v2, tuned v3 are not done. Does that mean regularization is pending?
+
+---
+## 2026-07-15 12:39:11
+
+remind me whats pending from our plan
+
+---
+## 2026-07-15 23:32:44
+
+Run HMM(the feature addition version), order flow based model as well now.
+
+---
+## 2026-07-15 23:40:05
+
+I would like to clarify which featureset to test. Check previous leaderboard and see which feature set performed best with HMM and orderflow. Add both together. I think we would need to run v1+HMM+ orderflow for logistic (with normalized volume as per previous implementation) and v3 + HMM + orderflow for rf and GBM
+
+---
+## 2026-07-16 00:55:53
+
+Commit all changes and create pr request

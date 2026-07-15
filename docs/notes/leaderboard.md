@@ -2,7 +2,7 @@
 
 Every binary up/down model on the flat-free 50/50 time-ordered test set (144,263 decisive bars). **Sorted by accuracy, then MCC.**
 
-- Excluded (length mismatch / non-binary): `exp_regime_binary`, `walkforward_wf_baseline_alwaysup`, `walkforward_wf_tuned_v1_logistic`, `walkforward_wf_tuned_v1_rf`, `walkforward_wf_v1_gbm`, `walkforward_wf_v1_logistic`, `walkforward_wf_v1_rf`, `walkforward_wf_v1rel_gbm`, `walkforward_wf_v1rel_logistic`, `walkforward_wf_v1rel_rf`, `walkforward_wf_v2_gbm`, `walkforward_wf_v2_logistic`, `walkforward_wf_v2_rf`, `walkforward_wf_v3_gbm`, `walkforward_wf_v3_logistic`, `walkforward_wf_v3_rf`.
+- Excluded (length mismatch / non-binary): `exp_regime_binary`, `walkforward_wf_baseline_alwaysup`, `walkforward_wf_ofhmm_v1_logistic`, `walkforward_wf_ofhmm_v3_gbm`, `walkforward_wf_ofhmm_v3_rf`, `walkforward_wf_tuned_v1_gbm`, `walkforward_wf_tuned_v1_logistic`, `walkforward_wf_tuned_v1_rf`, `walkforward_wf_tuned_v2_gbm`, `walkforward_wf_tuned_v2_logistic`, `walkforward_wf_tuned_v2_rf`, `walkforward_wf_tuned_v3_gbm`, `walkforward_wf_tuned_v3_logistic`, `walkforward_wf_tuned_v3_rf`, `walkforward_wf_v1_gbm`, `walkforward_wf_v1_logistic`, `walkforward_wf_v1_rf`, `walkforward_wf_v1rel_gbm`, `walkforward_wf_v1rel_logistic`, `walkforward_wf_v1rel_rf`, `walkforward_wf_v2_gbm`, `walkforward_wf_v2_logistic`, `walkforward_wf_v2_rf`, `walkforward_wf_v3_gbm`, `walkforward_wf_v3_logistic`, `walkforward_wf_v3_rf`.
 *AUM %* = total return of the compounding long/short backtest on the test bars.
 
 | Model | Accuracy | Recall | MCC | AUM % |
